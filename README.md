@@ -1,6 +1,9 @@
-# Wi-Fi Indoor Environment Mapper (Native Android + Cloud Telemetry)
+# Wi-Fi Indoor Environment Mapper (`wifi-nerf-mapper`)
+> **Focus: Background Multi-Modal RF & Inertial Data Collection for Indoor Environment Mapping**
 
-A complete system turning an unmodified Android phone into an indoor environment mapping sensor using Wi-Fi signals, inertial Pedestrian Dead Reckoning (PDR), barometric altitude locking, and Wi-Fi RTT ranging—**100% in the background with the screen off**.
+A standalone, production-ready **Native Android Data Collection System in Kotlin** that turns an unmodified smartphone into a synchronized multi-modal RF, inertial, and barometric mapping sensor—**running 100% in the background with the screen off**.
+
+This project provides the complete mobile collection agent and ingestion pipeline to gather the high-precision datasets needed for physics-informed Wi-Fi floorplan reconstruction (NeRFMap, RF-3DGS, and SAR reflection inversion) without requiring cameras, ARCore, or rooted hardware.
 
 ---
 
