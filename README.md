@@ -356,28 +356,67 @@ python3 cloud_backend/api_server.py
 
 ---
 
-## 6. Building and Deploying to Android
+## 6. Building, Cloud Setup & Distribution to Friends
 
-### Prerequisites
-- An Android phone running **Android 10 (API 29) to Android 14+ (API 34)**.
-- USB Debugging enabled in **Settings $\to$ Developer Options**.
-
-### Step 1: Configure ADB (One-Time Setup)
-```bash
-bash scripts/adb_setup_and_pull.sh setup
+### 6.1 Zero-Code Cloud Configuration (OCI Bucket / PAR)
+Before building, configure your storage backend directly in `android_app/app/src/main/res/values/strings.xml`:
+```xml
+<resources>
+    <!-- Set to "OCI_PAR" for direct serverless upload into Oracle Cloud Object Storage -->
+    <string name="cloud_provider_mode">OCI_PAR</string>
+    <!-- Your Pre-Authenticated Request (PAR) Object prefix URL from OCI Console -->
+    <string name="cloud_upload_url">https://objectstorage.<region>.oraclecloud.com/p/<token>/n/<namespace>/b/<bucket_name>/o/batches/</string>
+    <string name="cloud_auth_token"></string>
+</resources>
 ```
-This unlocks ~1 Hz full channel scans by disabling scan throttling:
-`adb shell settings put global wifi_scan_throttle_enabled 0`
+With this set, every phone built with this APK automatically streams encrypted Gzip batches into your bucket under `batches/<device_id>/...` with zero client-side authentication or API keys required.
 
-### Step 2: Build & Install APK
+---
+
+### 6.2 Option A: Direct Distribution to Friends (No PC / No ADB Needed)
+This is the recommended approach to share the app with friends, colleagues, or survey testers.
+
+#### 1. Build the Standalone APK
+From your terminal or command prompt:
 ```bash
+cd android_app
+./gradlew assembleDebug
+```
+*(On Windows: `gradlew.bat assembleDebug`, or in Android Studio: **Build > Build Bundle(s) / APK(s) > Build APK(s)**)*.
+
+The resulting standalone file is located at:
+`app/build/outputs/apk/debug/app-debug.apk` (you can rename it to `WifiMapper.apk`).
+
+#### 2. Share the File
+Send `WifiMapper.apk` to your friends via **WhatsApp, Telegram, Google Drive, OneDrive, or Email**.
+
+#### 3. What Your Friends Do on Their Phones (30 Seconds)
+1. **Tap & Install**:
+   - Tap the received `WifiMapper.apk` file.
+   - If prompted with *"Your phone is not allowed to install unknown apps from this source"*, tap **Settings** &rarr; toggle on **Allow from this source** &rarr; tap **Install**.
+2. **Launch & Grant Standard On-Screen Permissions**:
+   - Open **Wi-Fi Mapper**. Android will prompt with standard system dialogs:
+     - **Location**: Choose *"While using the app"* or *"All the time"*.
+     - **Physical Activity**: Tap *"Allow"* (for dead-reckoning step tracking).
+     - **Notifications**: Tap *"Allow"* (keeps the background service alive in the status bar).
+3. **One-Tap Optimizations (Right in the App)**:
+   - **"24/7 Battery" Button**: Opens the system prompt to exclude the app from battery killing so it maps with the screen locked in their pocket.
+   - **"Scan Throttling" Button** *(Optional, for 10x faster scans)*: Opens Developer Options directly on their screen. They just toggle off **"Wi-Fi scan throttling"**. *(If developer options are not active yet, tap "Build Number" 7 times in Phone Settings &rarr; About Phone)*.
+4. **Start Mapping**:
+   - Tap **START BACKGROUND SERVICE**, lock the phone, and pocket it.
+   - Each friend automatically receives a cryptographically unique `device_id` (`DeviceIdentityManager.kt`). All batches sync to your OCI bucket tagged with their device ID. If they lose cell/Wi-Fi signal, data buffers locally in SQLite and uploads when connection returns.
+
+---
+
+### 6.3 Option B: Developer / USB ADB Installation (Power Users)
+If you are developing locally with a test phone connected via USB:
+
+```bash
+# 1. (Optional) Disable Wi-Fi scan throttling via ADB terminal
+bash scripts/adb_setup_and_pull.sh setup
+
+# 2. Build & Install directly via ADB
 cd android_app
 ./gradlew assembleDebug
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
-
-### Step 3: Run 24/7 in Background
-1. Open **Wi-Fi Mapper** on the phone.
-2. Tap **START BACKGROUND SERVICE**.
-3. The notification bar displays the active mapping foreground service.
-4. Turn off the screen or pocket the device. The app operates continuously with `PARTIAL_WAKE_LOCK`, automatically camping when you stop and shifting duty cycles seamlessly.
