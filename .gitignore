@@ -1,0 +1,19 @@
+# Build artifacts
+*.apk
+*.ap_
+*.dex
+*.class
+bin/
+build/
+.gradle/
+
+# Local configuration
+local.properties
+.idea/
+*.iml
+
+# Ingested sessions
+ingested_batches/
+sessions/
+__pycache__/
+*.pyc
