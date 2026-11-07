@@ -3,6 +3,15 @@ package com.antigravity.wifimapper.model
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
+/**
+ * 24/7 lifecycle dwell state of the device within an RF environment.
+ */
+@Serializable
+enum class DwellState {
+    @SerialName("CAMPING") CAMPING,
+    @SerialName("IN_TRANSIT") IN_TRANSIT
+}
+
 @Serializable
 data class Pose6DoF(
     val x: Double,
@@ -21,6 +30,9 @@ sealed class TelemetryEvent {
     abstract val eventType: String
     abstract val timestampNs: Long
     abstract val pose: Pose6DoF?
+    open val deviceId: String? get() = null
+    open val environmentId: String? get() = null
+    open val dwellState: String? get() = null
 }
 
 @Serializable
@@ -29,6 +41,9 @@ data class BatchEnvelope(
     @SerialName("event_type") override val eventType: String = "batch_envelope",
     @SerialName("timestamp_ns") override val timestampNs: Long,
     @SerialName("session_id") val sessionId: String,
+    @SerialName("device_id") override val deviceId: String = "",
+    @SerialName("environment_id") override val environmentId: String = "",
+    @SerialName("dwell_state") override val dwellState: String = "IN_TRANSIT",
     @SerialName("batch_seq") val batchSeq: Long,
     @SerialName("start_time_ns") val startTimeNs: Long,
     @SerialName("end_time_ns") val endTimeNs: Long,
@@ -67,6 +82,9 @@ data class MultiBandPair(
 data class WifiScanBatchEvent(
     @SerialName("event_type") override val eventType: String = "wifi_scan_batch",
     @SerialName("timestamp_ns") override val timestampNs: Long,
+    @SerialName("device_id") override val deviceId: String? = null,
+    @SerialName("environment_id") override val environmentId: String? = null,
+    @SerialName("dwell_state") override val dwellState: String? = null,
     val scans: List<WifiScanItem>,
     @SerialName("multiband_pairs") val multibandPairs: List<MultiBandPair> = emptyList(),
     override val pose: Pose6DoF? = null
@@ -77,6 +95,9 @@ data class WifiScanBatchEvent(
 data class ConnectedProbeEvent(
     @SerialName("event_type") override val eventType: String = "connected_probe",
     @SerialName("timestamp_ns") override val timestampNs: Long,
+    @SerialName("device_id") override val deviceId: String? = null,
+    @SerialName("environment_id") override val environmentId: String? = null,
+    @SerialName("dwell_state") override val dwellState: String? = null,
     val bssid: String,
     @SerialName("freq_mhz") val freqMhz: Int,
     @SerialName("rssi_dbm") val rssiDbm: Int,
@@ -91,6 +112,9 @@ data class ConnectedProbeEvent(
 data class WifiRttEvent(
     @SerialName("event_type") override val eventType: String = "wifi_rtt",
     @SerialName("timestamp_ns") override val timestampNs: Long,
+    @SerialName("device_id") override val deviceId: String? = null,
+    @SerialName("environment_id") override val environmentId: String? = null,
+    @SerialName("dwell_state") override val dwellState: String? = null,
     val bssid: String,
     val mode: String,
     @SerialName("distance_mm") val distanceMm: Int,
@@ -106,6 +130,9 @@ data class WifiRttEvent(
 data class MagBaroPdrEvent(
     @SerialName("event_type") override val eventType: String = "mag_baro_pdr",
     @SerialName("timestamp_ns") override val timestampNs: Long,
+    @SerialName("device_id") override val deviceId: String? = null,
+    @SerialName("environment_id") override val environmentId: String? = null,
+    @SerialName("dwell_state") override val dwellState: String? = null,
     @SerialName("mag_uncal_ut") val magUncalUt: List<Float> = emptyList(),
     @SerialName("mag_norm_ut") val magNormUt: Float = 0f,
     @SerialName("pressure_hpa") val pressureHpa: Float = 0f,
@@ -126,6 +153,9 @@ data class EchoPeak(
 data class AcousticSonarEvent(
     @SerialName("event_type") override val eventType: String = "acoustic_sonar",
     @SerialName("timestamp_ns") override val timestampNs: Long,
+    @SerialName("device_id") override val deviceId: String? = null,
+    @SerialName("environment_id") override val environmentId: String? = null,
+    @SerialName("dwell_state") override val dwellState: String? = null,
     @SerialName("temp_c") val tempC: Double = 22.0,
     @SerialName("nearest_wall_m") val nearestWallM: Double,
     val echoes: List<EchoPeak> = emptyList(),
@@ -134,6 +164,9 @@ data class AcousticSonarEvent(
 
 data class LiveMappingTelemetry(
     val isRunning: Boolean = false,
+    val deviceId: String = "",
+    val environmentId: String = "unknown",
+    val dwellState: String = "IN_TRANSIT",
     val totalSteps: Int = 0,
     val totalDistanceM: Double = 0.0,
     val currentPose: Pose6DoF = Pose6DoF(0.0, 0.0),

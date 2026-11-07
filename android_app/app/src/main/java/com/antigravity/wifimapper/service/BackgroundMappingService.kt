@@ -10,7 +10,9 @@ import android.os.IBinder
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import com.antigravity.wifimapper.cloud.CloudBatchUploader
+import com.antigravity.wifimapper.cloud.DeviceIdentityManager
 import com.antigravity.wifimapper.collectors.ConnectedLinkProber
+import com.antigravity.wifimapper.collectors.EnvironmentDwellManager
 import com.antigravity.wifimapper.collectors.InertialPdrTracker
 import com.antigravity.wifimapper.collectors.WifiMultiBandScanner
 import com.antigravity.wifimapper.collectors.WifiRttRanger
@@ -23,12 +25,16 @@ import kotlinx.coroutines.flow.StateFlow
 
 /**
  * Android ForegroundService that runs all sensors continuously with screen off
- * under PARTIAL_WAKE_LOCK and streams telemetry to the cloud REST endpoint.
+ * under PARTIAL_WAKE_LOCK, orchestrates multi-device fleet identity, 24/7 environment
+ * dwell clustering with adaptive duty-cycling, and streams telemetry to cloud storage.
  */
 class BackgroundMappingService : Service() {
 
     private var wakeLock: PowerManager.WakeLock? = null
     private val poseRingBuffer = PoseRingBuffer(capacity = 2000)
+
+    private lateinit var deviceIdentityManager: DeviceIdentityManager
+    private lateinit var environmentDwellManager: EnvironmentDwellManager
 
     private lateinit var pdrTracker: InertialPdrTracker
     private lateinit var wifiScanner: WifiMultiBandScanner
@@ -47,9 +53,37 @@ class BackgroundMappingService : Service() {
             acquire(60 * 60 * 1000L) // 1 hr max safe lease
         }
 
-        cloudUploader = CloudBatchUploader(applicationContext)
+        // Initialize fleet device identity and 24/7 dwell cluster manager
+        deviceIdentityManager = DeviceIdentityManager(applicationContext)
+        environmentDwellManager = EnvironmentDwellManager()
+
+        // Configure cloud uploader with hardware device ID and dynamic environment state
+        cloudUploader = CloudBatchUploader(
+            context = applicationContext,
+            deviceIdProvider = { deviceIdentityManager.getDeviceId() },
+            environmentIdProvider = { environmentDwellManager.currentEnvironmentId },
+            dwellStateProvider = { environmentDwellManager.currentDwellState.name }
+        )
         cloudUploader.start()
 
+        // Handle adaptive duty-cycling on state changes (e.g. CAMPING vs IN_TRANSIT)
+        environmentDwellManager.onDutyCycleChanged = { wifiScanMs, batchUploadMs ->
+            wifiScanner.updateInterval(wifiScanMs)
+            cloudUploader.updateBatchInterval(batchUploadMs)
+            _telemetryState.value = _telemetryState.value.copy(
+                environmentId = environmentDwellManager.currentEnvironmentId,
+                dwellState = environmentDwellManager.currentDwellState.name
+            )
+        }
+
+        environmentDwellManager.onDwellStateChanged = { _, newState, envId ->
+            _telemetryState.value = _telemetryState.value.copy(
+                environmentId = envId,
+                dwellState = newState.name
+            )
+        }
+
+        // High-rate PDR step tracker
         pdrTracker = InertialPdrTracker(applicationContext, poseRingBuffer)
         pdrTracker.onStepDetectedListener = { steps, strideM, pose ->
             _telemetryState.value = _telemetryState.value.copy(
@@ -60,22 +94,47 @@ class BackgroundMappingService : Service() {
         }
         pdrTracker.start()
 
+        // Multi-band Wi-Fi scanner connected to dwell clustering
         wifiScanner = WifiMultiBandScanner(applicationContext, poseRingBuffer) { scanBatch ->
-            cloudUploader.enqueueEvent(scanBatch)
+            // Update 24/7 environment dwell clustering
+            environmentDwellManager.processScanBatch(scanBatch.scans)
+
+            // Enrich batch with device & environment metadata
+            val enrichedBatch = scanBatch.copy(
+                deviceId = deviceIdentityManager.getDeviceId(),
+                environmentId = environmentDwellManager.currentEnvironmentId,
+                dwellState = environmentDwellManager.currentDwellState.name
+            )
+            cloudUploader.enqueueEvent(enrichedBatch)
+
             _telemetryState.value = _telemetryState.value.copy(
                 visibleApCount = scanBatch.scans.size,
-                lastExcessWallLossDb = scanBatch.multibandPairs.firstOrNull()?.excessWallLossDb
+                lastExcessWallLossDb = scanBatch.multibandPairs.firstOrNull()?.excessWallLossDb,
+                environmentId = environmentDwellManager.currentEnvironmentId,
+                dwellState = environmentDwellManager.currentDwellState.name
             )
         }
-        wifiScanner.start(intervalMs = 1500L)
+        wifiScanner.start(intervalMs = environmentDwellManager.recommendedWifiScanIntervalMs)
 
+        // Connected AP probing
         linkProber = ConnectedLinkProber(applicationContext, poseRingBuffer) { probeEvent ->
-            cloudUploader.enqueueEvent(probeEvent)
+            val enrichedProbe = probeEvent.copy(
+                deviceId = deviceIdentityManager.getDeviceId(),
+                environmentId = environmentDwellManager.currentEnvironmentId,
+                dwellState = environmentDwellManager.currentDwellState.name
+            )
+            cloudUploader.enqueueEvent(enrichedProbe)
         }
         linkProber.start(intervalMs = 100L)
 
+        // 802.11mc FTM RTT Ranger
         rttRanger = WifiRttRanger(applicationContext, poseRingBuffer) { rttEvent ->
-            cloudUploader.enqueueEvent(rttEvent)
+            val enrichedRtt = rttEvent.copy(
+                deviceId = deviceIdentityManager.getDeviceId(),
+                environmentId = environmentDwellManager.currentEnvironmentId,
+                dwellState = environmentDwellManager.currentDwellState.name
+            )
+            cloudUploader.enqueueEvent(enrichedRtt)
             _telemetryState.value = _telemetryState.value.copy(
                 rttAnchorCount = _telemetryState.value.rttAnchorCount + 1
             )
@@ -90,7 +149,12 @@ class BackgroundMappingService : Service() {
             )
         }
 
-        _telemetryState.value = _telemetryState.value.copy(isRunning = true)
+        _telemetryState.value = _telemetryState.value.copy(
+            isRunning = true,
+            deviceId = deviceIdentityManager.getDeviceId(),
+            environmentId = environmentDwellManager.currentEnvironmentId,
+            dwellState = environmentDwellManager.currentDwellState.name
+        )
     }
 
     override fun onDestroy() {

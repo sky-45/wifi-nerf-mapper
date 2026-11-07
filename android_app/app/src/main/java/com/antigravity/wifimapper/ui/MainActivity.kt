@@ -127,6 +127,9 @@ fun MappingDashboardScreen(
         // Metrics Grid
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                val shortDevice = if (telemetry.deviceId.length > 8) telemetry.deviceId.take(8) + "..." else telemetry.deviceId.ifEmpty { "Pending" }
+                Text("Device Fleet ID: $shortDevice")
+                Text("Environment: ${telemetry.environmentId} [${telemetry.dwellState}]")
                 Text("Walk Distance: %.2f m".format(telemetry.totalDistanceM))
                 Text("Visible Wi-Fi APs: ${telemetry.visibleApCount}")
                 Text("RTT Anchor Hits: ${telemetry.rttAnchorCount}")

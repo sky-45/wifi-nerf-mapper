@@ -174,7 +174,10 @@ class NeRFMap2DSolver:
 
 def generate_synthetic_mapping_session(
     duration_s: float = 60.0,
-    walk_speed_mps: float = 0.8
+    walk_speed_mps: float = 0.8,
+    device_id: str = "device_pixel8_001",
+    environment_id: str = "env_b3a1c8f9210d4e5a",
+    dwell_state: str = "IN_TRANSIT"
 ) -> List[Dict[str, Any]]:
     """
     Simulates a 2-room apartment walk (8m x 6m) with:
@@ -206,6 +209,9 @@ def generate_synthetic_mapping_session(
         events.append({
             "event_type": "mag_baro_pdr",
             "timestamp_ns": t_ns,
+            "device_id": device_id,
+            "environment_id": environment_id,
+            "dwell_state": dwell_state,
             "step_detected": True,
             "stride_length_m": round(walk_speed_mps / 1.5, 3),
             "pressure_hpa": 1013.25,
@@ -222,6 +228,9 @@ def generate_synthetic_mapping_session(
             events.append({
                 "event_type": "connected_probe",
                 "timestamp_ns": t_ns + 10_000_000,
+                "device_id": device_id,
+                "environment_id": environment_id,
+                "dwell_state": dwell_state,
                 "bssid": "a4:97:b1:12:34:54",
                 "freq_mhz": 5180,
                 "rssi_dbm": probe_rssi,
@@ -255,6 +264,9 @@ def generate_synthetic_mapping_session(
             events.append({
                 "event_type": "wifi_scan_batch",
                 "timestamp_ns": t_ns + 15_000_000,
+                "device_id": device_id,
+                "environment_id": environment_id,
+                "dwell_state": dwell_state,
                 "scans": scans,
                 "multiband_pairs": [{
                     "ap_group_id": "a4:97:b1:12:34:xx",
@@ -271,6 +283,9 @@ def generate_synthetic_mapping_session(
             events.append({
                 "event_type": "wifi_rtt",
                 "timestamp_ns": t_ns + 20_000_000,
+                "device_id": device_id,
+                "environment_id": environment_id,
+                "dwell_state": dwell_state,
                 "bssid": "a4:97:b1:12:34:54",
                 "mode": "TWO_SIDED_80211MC",
                 "distance_mm": rtt_dist_mm,

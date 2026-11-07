@@ -71,6 +71,9 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
 
+    // Security & EncryptedSharedPreferences (Hardware-backed Keystore)
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
+
     // Networking (Store & Forward Gzip REST upload)
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")

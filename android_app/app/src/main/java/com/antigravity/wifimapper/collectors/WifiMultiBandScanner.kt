@@ -39,10 +39,17 @@ class WifiMultiBandScanner(
         }
     }
 
+    private var currentIntervalMs: Long = 1000L
+
     fun start(intervalMs: Long = 1000L) {
+        currentIntervalMs = intervalMs
         val filter = IntentFilter(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION)
         context.registerReceiver(receiver, filter)
+        startScanLoop()
+    }
 
+    private fun startScanLoop() {
+        scanJob?.cancel()
         scanJob = scope.launch {
             while (isActive) {
                 try {
@@ -51,8 +58,16 @@ class WifiMultiBandScanner(
                 } catch (e: Exception) {
                     // Ignored if throttled
                 }
-                delay(intervalMs)
+                delay(currentIntervalMs)
             }
+        }
+    }
+
+    fun updateInterval(newIntervalMs: Long) {
+        if (currentIntervalMs == newIntervalMs) return
+        currentIntervalMs = newIntervalMs
+        if (scanJob?.isActive == true) {
+            startScanLoop()
         }
     }
 

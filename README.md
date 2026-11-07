@@ -1,9 +1,9 @@
 # Wi-Fi Indoor Environment Mapper (`wifi-nerf-mapper`)
-> **Focus: Background Multi-Modal RF & Inertial Data Collection for Indoor Environment Mapping**
+> **Production-Ready Background Multi-Modal RF, Inertial & Dwell Data Collection for Indoor NeRF/Floorplan Reconstruction**
 
-A standalone, production-ready **Native Android Data Collection System in Kotlin** that turns an unmodified smartphone into a synchronized multi-modal RF, inertial, and barometric mapping sensor—**running 100% in the background with the screen off**.
+A native Android data collection engine in Kotlin that transforms an unmodified smartphone into a synchronized multi-modal RF, inertial, and barometric mapping sensor—**running 100% in the background with the screen off**.
 
-This project provides the complete mobile collection agent and ingestion pipeline to gather the high-precision datasets needed for physics-informed Wi-Fi floorplan reconstruction (NeRFMap, RF-3DGS, and SAR reflection inversion) without requiring cameras, ARCore, or rooted hardware.
+Designed specifically for crowdsourced and fleet-wide indoor RF mapping, this repository provides the end-to-end mobile collector, multi-device fleet identity, 24/7 environment dwell clustering, adaptive duty-cycling, dual-mode cloud ingestion (Oracle Cloud Infrastructure Object Storage PAR or standard REST), and physics-informed 2D floorplan solvers.
 
 ---
 
@@ -15,13 +15,13 @@ wifi_env_mapper/
 │   ├── app/src/main/
 │   │   ├── AndroidManifest.xml # ForegroundService + Wi-Fi/Sensors permissions
 │   │   └── java/com/antigravity/wifimapper/
-│   │       ├── model/         # @Serializable data classes (NDJSON schema)
+│   │       ├── model/         # @Serializable data classes (NDJSON schema & DwellState)
 │   │       ├── sync/          # PoseRingBuffer (Hardware CLOCK_BOOTTIME SLERP)
-│   │       ├── collectors/    # PDR Tracker, Multi-Band Scanner, Link Prober, RTT Ranger
-│   │       ├── cloud/         # Store-and-Forward Gzip NDJSON REST uploader
-│   │       ├── service/       # BackgroundMappingService (PARTIAL_WAKE_LOCK)
+│   │       ├── collectors/    # PDR Tracker, Multi-Band Scanner, Link Prober, RTT Ranger, EnvironmentDwellManager
+│   │       ├── cloud/         # DeviceIdentityManager, CloudBatchUploader (OCI PAR / REST)
+│   │       ├── service/       # BackgroundMappingService (PARTIAL_WAKE_LOCK & Duty-Cycling)
 │   │       └── ui/            # Jetpack Compose HUD Dashboard
-├── cloud_backend/             # Reference REST Ingestion Server (POST /api/v1/telemetry/batches)
+├── cloud_backend/             # Dual-Mode Ingestion Server (OCI Object Storage PAR / REST)
 │   └── api_server.py
 ├── reconstruction/            # Physics-Informed Floorplan Solver (NeRFMap, Multi-Band, RTT)
 │   └── pipeline.py
@@ -31,63 +31,353 @@ wifi_env_mapper/
     └── test_pipeline.py
 ```
 
+```mermaid
+flowchart TD
+    subgraph Mobile Device Collectors
+        PDR[Inertial PDR Tracker<br/>200 Hz IMU + Mag + Baro] -->|Hardware BootTime SLERP| PRB[PoseRingBuffer]
+        WIFI[Multi-Band Wi-Fi Scanner<br/>2.4 / 5 / 6 GHz Sweeper] -->|Retro-Interpolate Pose| DWELL[EnvironmentDwellManager<br/>Top-8 Jaccard & Dwell Clustering]
+        PROBE[Connected Link Prober<br/>UDP RTT + RSSI + Link Speed] -->|Retro-Interpolate Pose| SPOOL
+        RTT[Wi-Fi RTT Ranger<br/>802.11mc FTM ToF] -->|Retro-Interpolate Pose| SPOOL
+        WIFI --> SPOOL[Local Flash Disk Spool<br/>Gzip NDJSON]
+    end
+
+    subgraph Identity & Duty-Cycling
+        ID[DeviceIdentityManager<br/>Android Keystore MasterKey AES-256 UUID] --> SPOOL
+        DWELL -->|State: CAMPING vs IN_TRANSIT| DUTY[Adaptive Duty-Cycle Scaling]
+        DUTY -->|1.5s vs 15s Scan Interval| WIFI
+        DUTY -->|15s vs 60s Batch Interval| UPLOAD[CloudBatchUploader]
+    end
+
+    subgraph Cloud Ingestion Modes
+        SPOOL --> UPLOAD
+        UPLOAD -->|Mode 1: PUT /fleet/{dev}/{env}/batch_{seq}.ndjson.gz| OCI[OCI Object Storage PAR<br/>Direct Serverless Ingest]
+        UPLOAD -->|Mode 2: POST /api/v1/telemetry/batches| REST[REST Telemetry Gateway<br/>X-Device-Id / X-Environment-Id]
+    end
+```
+
 ---
 
-## 1. Quick Start: Testing the Python Server & Benchmark
+## 1. Multi-Device Fleet Identification
 
-You can run the reference cloud ingestion API server and the reconstruction pipeline locally:
+In multi-phone crowd-mapping deployments, data collected by different devices must be reliably correlated, attributed, and partitioned without violating platform security policies or user privacy.
+
+### Why Not IMEI or Wi-Fi MAC Address?
+1. **Platform Security Restrictions (Android 10+ / API 29+)**:
+   - `Build.getSerial()`, `TelephonyManager.getImei()`, and `getDeviceId()` are gated behind the privileged permission `READ_PRIVILEGED_PHONE_STATE`. This permission is reserved strictly for system applications signed by the device platform key; normal user-installed applications receive a fatal `SecurityException`.
+   - Wi-Fi MAC addresses are randomized per network connection. Furthermore, calling `WifiInfo.getMacAddress()` always returns the hardcoded dummy value `02:00:00:00:00:00` to prevent cross-app tracking.
+2. **Google Play Policy Compliance**:
+   - Google Play Developer Distribution agreements strictly prohibit capturing non-resettable hardware identifiers for application tracking.
+
+### Hardware-Backed Persistent UUID Architecture
+`DeviceIdentityManager.kt` generates a cryptographically random UUIDv4 on first run and persists it using **Android Keystore-backed `EncryptedSharedPreferences`**:
+- **Encryption Scheme**: AES-256 SIV for keys and AES-256 GCM for values, managed via Jetpack Security `MasterKey`.
+- **Persistence Guarantees**: Stored securely on the device's internal private storage. Survives application restarts, background service recreation, phone reboots, and OTA OS updates. Resettable only on complete application uninstall.
+- **Hardware Profile Snapshot**: Accompanies the UUID with an immutable snapshot of physical device capabilities:
+  ```json
+  {
+    "device_id": "8f3e2b10-6c94-4d89-9a71-3b7c8e9f0123",
+    "manufacturer": "Google",
+    "model": "Pixel 8 Pro",
+    "brand": "google",
+    "device": "husky",
+    "product": "husky",
+    "hardware": "husky",
+    "sdk_int": 34,
+    "release": "14",
+    "has_wifi_rtt": true,
+    "has_accelerometer": true,
+    "has_gyroscope": true,
+    "has_compass": true,
+    "has_barometer": true,
+    "has_step_detector": true
+  }
+  ```
+
+---
+
+## 2. 24/7 Environment Dwell & Camping Lifecycle
+
+To operate 24/7 without exhausting the device battery, the mapping engine clusters localized RF environments and dynamically scales sensor duty cycles based on user mobility.
+
+```mermaid
+stateDiagram-v2
+    [*] --> IN_TRANSIT: Service Started
+
+    state IN_TRANSIT {
+        direction TB
+        desc1: High-Rate Sampling
+        desc2: Wi-Fi Scan Interval: 1.5s
+        desc3: Batch Upload Interval: 15s
+        desc4: Fine Spatial Gradient Mapping
+    }
+
+    state CAMPING {
+        direction TB
+        desc5: Scaled Duty-Cycle
+        desc6: Wi-Fi Scan Interval: 15s
+        desc7: Batch Upload Interval: 60s
+        desc8: Battery Draw: ~18 mA (>75% savings)
+    }
+
+    IN_TRANSIT --> CAMPING: Top-8 Jaccard >= 0.50 for >= 30s (or 3 scans)
+    CAMPING --> IN_TRANSIT: Top-8 Jaccard < 0.50 for >= 2 consecutive scans
+```
+
+### Top-8 Strongest BSSIDs
+Indoor spaces (homes, offices, cafes) are characterized by the strongest access points. Distant APs fluctuating near the receiver noise floor (-85 dBm to -95 dBm) vary randomly due to multipath shadowing. `EnvironmentDwellManager.kt` extracts the **top-8 strongest unique BSSIDs** sorted by RSSI descending, discarding noise.
+
+### Jaccard Index Clustering
+Given the active cluster BSSID set $A$ and the newly scanned BSSID set $B$:
+$$J(A, B) = \frac{|A \cap B|}{|A \cup B|}$$
+
+- If $J(A, B) \ge 0.50$: The device is in the **same physical environment**. The cluster signature is maintained and incrementally updated.
+- If $J(A, B) < 0.50$ across 2 consecutive scans: The device has moved to an adjacent room, walked out onto the street, or entered a new building.
+
+### Canonical SHA-256 Environment ID
+To ensure multiple phones visiting the same location produce identical cluster identifiers without exposing raw hardware MACs:
+1. Sort the cluster's top BSSIDs lexicographically: `"AA:BB:CC:DD:EE:01|AA:BB:CC:DD:EE:02|..."`
+2. Compute the SHA-256 digest.
+3. Form the deterministic environment identifier: `env_{sha256_prefix}` (e.g., `env_b3a1c8f9210d4e5a`).
+
+### Adaptive Duty-Cycle Scaling
+
+| Metric / Parameter | `IN_TRANSIT` Mode | `CAMPING` Mode | Impact |
+|:---|:---|:---|:---|
+| **User Activity** | Walking, transit, hallway traversal | Desk work, sleeping, seated dwell | Continuous coverage |
+| **Wi-Fi Scan Rate** | ~0.67 Hz (Every 1,500 ms) | ~0.067 Hz (Every 15,000 ms) | 10× scan reduction |
+| **Batch Upload Rate** | Every 15,000 ms | Every 60,000 ms | 4× radio transmit reduction |
+| **Connected Prober** | 100 ms UDP probe active | Suspended or reduced rate | Conserves link bandwidth |
+| **Estimated Current** | ~78 mA (~1.7% battery / hr) | ~18 mA (~0.4% battery / hr) | **>75% battery savings** |
+
+---
+
+## 3. Configurable Cloud Provider Architecture
+
+The telemetry engine features a store-and-forward architecture with dual-destination cloud uploaders configured in `CloudBatchUploader.kt`.
+
+### Mode 1: OCI Object Storage via Pre-Authenticated Request (PAR)
+Direct, serverless upload directly to Oracle Cloud Infrastructure Object Storage (or AWS S3-compatible buckets) without needing an intermediary application server.
+
+- **Object Path Hierarchy**:
+  ```
+  https://objectstorage.{region}.oraclecloud.com/p/{par_token}/n/{namespace}/b/{bucket}/o/fleet/{device_id}/{environment_id}/batch_{seq}.ndjson.gz
+  ```
+- **HTTP Method**: `PUT` (standard S3/OCI Object Storage object upload) or `POST`.
+- **Request Headers**:
+  ```http
+  PUT /fleet/8f3e2b10-6c94-4d89-9a71-3b7c8e9f0123/env_b3a1c8f9210d4e5a/batch_42.ndjson.gz HTTP/1.1
+  Host: objectstorage.us-ashburn-1.oraclecloud.com
+  Content-Type: application/x-ndjson
+  Content-Encoding: gzip
+  X-Device-Id: 8f3e2b10-6c94-4d89-9a71-3b7c8e9f0123
+  X-Environment-Id: env_b3a1c8f9210d4e5a
+  X-Dwell-State: CAMPING
+  X-Session-Id: a3f890b1-4d32-41ce-bb42-10f78912d001
+  X-Batch-Id: batch_9921_a4b0c1
+  X-Batch-Seq: 42
+  ```
+
+### Mode 2: Standard REST Telemetry Ingestion Server
+Ingestion into a centralized processing pipeline (e.g., Python FastAPI, Go, or Node backend):
+
+- **Endpoint**: `POST /api/v1/telemetry/batches`
+- **Request Headers**:
+  ```http
+  POST /api/v1/telemetry/batches HTTP/1.1
+  Host: telemetry.mapper.internal:8000
+  Authorization: Bearer <auth_token>
+  Content-Type: application/x-ndjson
+  Content-Encoding: gzip
+  X-Device-Id: 8f3e2b10-6c94-4d89-9a71-3b7c8e9f0123
+  X-Environment-Id: env_b3a1c8f9210d4e5a
+  X-Dwell-State: IN_TRANSIT
+  X-Session-Id: a3f890b1-4d32-41ce-bb42-10f78912d001
+  X-Batch-Id: batch_9921_a4b0c1
+  X-Batch-Seq: 42
+  ```
+
+### Store-and-Forward Zero Data Loss Guarantee
+Every batch is serialized, compressed with Gzip, and written to flash storage (`filesDir/telemetry_spool/batch_{device}_{env}_{seq}_{id}.ndjson.gz`) **before** any network transmission begins. Spool files are unlinked only after a `2xx` HTTP response is received. If the phone traverses a Wi-Fi dead zone, batches accumulate on disk and upload automatically upon reconnect.
+
+---
+
+## 4. Exact NDJSON Schema Specifications
+
+Each batch payload is a Gzipped Newline-Delimited JSON (`.ndjson.gz`) file.
+- **Line 1 is ALWAYS the `batch_envelope`**, containing the fleet device ID, environment ID, dwell state, hardware battery stats, and sequence index.
+- **Lines 2..N are polymorphic `TelemetryEvent` records**, each with hardware CLOCK_BOOTTIME nanosecond timestamps and SLERP retro-interpolated 6-DoF poses.
+
+### Batch Envelope (`batch_envelope`)
+```json
+{
+  "event_type": "batch_envelope",
+  "timestamp_ns": 1700000015000000000,
+  "session_id": "a3f890b1-4d32-41ce-bb42-10f78912d001",
+  "device_id": "8f3e2b10-6c94-4d89-9a71-3b7c8e9f0123",
+  "environment_id": "env_b3a1c8f9210d4e5a",
+  "dwell_state": "CAMPING",
+  "batch_seq": 42,
+  "start_time_ns": 1700000000000000000,
+  "end_time_ns": 1700000014900000000,
+  "event_count": 87,
+  "battery_pct": 84,
+  "battery_current_ua": -185000,
+  "step_count_delta": 24,
+  "pose": {
+    "x": 4.12,
+    "y": 2.85,
+    "z": 0.0,
+    "qx": 0.0, "qy": 0.0, "qz": 0.382, "qw": 0.924,
+    "confidence": 0.95,
+    "is_stationary": true
+  }
+}
+```
+
+### Multi-Band Wi-Fi Scan Batch (`wifi_scan_batch`)
+```json
+{
+  "event_type": "wifi_scan_batch",
+  "timestamp_ns": 1700000001500000000,
+  "device_id": "8f3e2b10-6c94-4d89-9a71-3b7c8e9f0123",
+  "environment_id": "env_b3a1c8f9210d4e5a",
+  "dwell_state": "CAMPING",
+  "scans": [
+    {
+      "bssid": "a4:97:b1:12:34:50",
+      "ssid": "HomeNet",
+      "ap_group_id": "a4:97:b1:12:34:xx-HomeNet",
+      "band": "2.4GHz",
+      "freq_mhz": 2437,
+      "bw_mhz": 20,
+      "rssi_dbm": -48,
+      "is_80211mc": false,
+      "hw_timestamp_ns": 1700000001460000000,
+      "scan_age_ms": 40,
+      "pose": {"x": 4.12, "y": 2.85, "z": 0.0, "qx": 0.0, "qy": 0.0, "qz": 0.382, "qw": 0.924, "confidence": 0.95, "is_stationary": true}
+    },
+    {
+      "bssid": "a4:97:b1:12:34:54",
+      "ssid": "HomeNet_5G",
+      "ap_group_id": "a4:97:b1:12:34:xx-HomeNet",
+      "band": "5GHz",
+      "freq_mhz": 5180,
+      "bw_mhz": 80,
+      "rssi_dbm": -55,
+      "is_80211mc": true,
+      "hw_timestamp_ns": 1700000001490000000,
+      "scan_age_ms": 10,
+      "pose": {"x": 4.12, "y": 2.85, "z": 0.0, "qx": 0.0, "qy": 0.0, "qz": 0.382, "qw": 0.924, "confidence": 0.95, "is_stationary": true}
+    }
+  ],
+  "multiband_pairs": [
+    {
+      "ap_group_id": "a4:97:b1:12:34:xx-HomeNet",
+      "rssi_24_dbm": -48,
+      "rssi_5_dbm": -55,
+      "excess_wall_loss_db": 0.44
+    }
+  ],
+  "pose": {"x": 4.12, "y": 2.85, "z": 0.0, "qx": 0.0, "qy": 0.0, "qz": 0.382, "qw": 0.924, "confidence": 0.95, "is_stationary": true}
+}
+```
+
+### Connected AP High-Rate Probing (`connected_probe`)
+```json
+{
+  "event_type": "connected_probe",
+  "timestamp_ns": 1700000002100000000,
+  "device_id": "8f3e2b10-6c94-4d89-9a71-3b7c8e9f0123",
+  "environment_id": "env_b3a1c8f9210d4e5a",
+  "dwell_state": "CAMPING",
+  "bssid": "a4:97:b1:12:34:54",
+  "freq_mhz": 5180,
+  "rssi_dbm": -54,
+  "tx_mbps": 866,
+  "rx_mbps": 780,
+  "udp_rtt_ms": 2.15,
+  "pose": {"x": 4.12, "y": 2.85, "z": 0.0, "qx": 0.0, "qy": 0.0, "qz": 0.382, "qw": 0.924, "confidence": 0.95, "is_stationary": true}
+}
+```
+
+### Wi-Fi RTT 802.11mc FTM Ranging (`wifi_rtt`)
+```json
+{
+  "event_type": "wifi_rtt",
+  "timestamp_ns": 1700000002600000000,
+  "device_id": "8f3e2b10-6c94-4d89-9a71-3b7c8e9f0123",
+  "environment_id": "env_b3a1c8f9210d4e5a",
+  "dwell_state": "CAMPING",
+  "bssid": "a4:97:b1:12:34:54",
+  "mode": "TWO_SIDED_80211MC",
+  "distance_mm": 3840,
+  "std_dev_mm": 115,
+  "rssi_dbm": -54,
+  "attempted": 8,
+  "successful": 8,
+  "pose": {"x": 4.12, "y": 2.85, "z": 0.0, "qx": 0.0, "qy": 0.0, "qz": 0.382, "qw": 0.924, "confidence": 0.95, "is_stationary": true}
+}
+```
+
+### Inertial PDR, Magnetometer & Barometer (`mag_baro_pdr`)
+```json
+{
+  "event_type": "mag_baro_pdr",
+  "timestamp_ns": 1700000003000000000,
+  "device_id": "8f3e2b10-6c94-4d89-9a71-3b7c8e9f0123",
+  "environment_id": "env_b3a1c8f9210d4e5a",
+  "dwell_state": "CAMPING",
+  "mag_uncal_ut": [18.4, -22.1, 41.5],
+  "mag_norm_ut": 49.85,
+  "pressure_hpa": 1013.25,
+  "step_detected": true,
+  "stride_length_m": 0.68,
+  "is_stationary": false,
+  "pose": {"x": 4.12, "y": 2.85, "z": 0.0, "qx": 0.0, "qy": 0.0, "qz": 0.382, "qw": 0.924, "confidence": 0.95, "is_stationary": false}
+}
+```
+
+---
+
+## 5. Quick Start: Local Testing & Benchmark
+
+You can run the unit tests, synthetic session pipeline benchmark, and local dual-mode ingestion server directly on your host:
 
 ```bash
-# 1. Run unit tests
+# 1. Run all unit tests (includes Jaccard clustering, OCI PAR, and REST upload tests)
 python3 -m unittest discover -s tests -v
 
 # 2. Run the end-to-end simulation & bandwidth/battery benchmark
 python3 reconstruction/pipeline.py
 
-# 3. Start the local REST Ingestion API server
+# 3. Start the dual-mode ingestion server (listening on port 8000)
 python3 cloud_backend/api_server.py
 ```
 
 ---
 
-## 2. Steps to Build and Install on an Android Test Phone
+## 6. Building and Deploying to Android
 
 ### Prerequisites
 - An Android phone running **Android 10 (API 29) to Android 14+ (API 34)**.
 - USB Debugging enabled in **Settings $\to$ Developer Options**.
-- Android Studio installed on your computer (or command-line Gradle).
 
-### Step 1: Configure Your Phone via ADB (One-Time Setup)
-Run the automated setup script to disable OS scan throttling and grant permissions:
-
+### Step 1: Configure ADB (One-Time Setup)
 ```bash
 bash scripts/adb_setup_and_pull.sh setup
 ```
+This unlocks ~1 Hz full channel scans by disabling scan throttling:
+`adb shell settings put global wifi_scan_throttle_enabled 0`
 
-This executes:
-1. `adb shell settings put global wifi_scan_throttle_enabled 0` (Crucial: unlocks ~1 Hz full channel scans instead of 4 every 2 minutes).
-2. `adb shell cmd wifi set-verbose-logging enabled`
-3. Grants Location, Nearby Devices, Activity Recognition, and Audio permissions directly via ADB.
-
-### Step 2: Build and Install the APK
-Open `android_app/` in Android Studio and press **Run**, or build from the command line:
-
+### Step 2: Build & Install APK
 ```bash
 cd android_app
 ./gradlew assembleDebug
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-### Step 3: Run in the Background
+### Step 3: Run 24/7 in Background
 1. Open **Wi-Fi Mapper** on the phone.
 2. Tap **START BACKGROUND SERVICE**.
-3. Turn off your screen or put the phone in your pocket.
-4. Walk naturally through your rooms for 2–5 minutes.
-5. Tap **STOP BACKGROUND SERVICE** when finished.
-
----
-
-## 3. Telemetry & Battery Consumption Profile
-
-- **Gzipped NDJSON Bandwidth:** Compresses raw telemetry by **~90–95%**. A 1-minute walk generates only **~4–10 KB** of compressed data (~0.25–0.5 MB / hour).
-- **Battery Consumption:** Draws **~78 mA** in active background mode (**~1.7% battery per hour**, or **~0.29% for a 10-minute walk**), vs. ~369 mA (~8.2%/hr) for camera/ARCore-based apps.
+3. The notification bar displays the active mapping foreground service.
+4. Turn off the screen or pocket the device. The app operates continuously with `PARTIAL_WAKE_LOCK`, automatically camping when you stop and shifting duty cycles seamlessly.
