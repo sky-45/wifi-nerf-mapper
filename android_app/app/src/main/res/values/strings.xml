@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Wi-Fi Mapper</string>
+
+    <!--
+      OCI OBJECT STORAGE CONFIGURATION
+      Paste your OCI Pre-Authenticated Request (PAR) URL below.
+      Format: https://objectstorage.<region>.oraclecloud.com/p/<PAR_TOKEN>/n/<NAMESPACE>/b/<BUCKET>/o
+    -->
+    <string name="oci_par_base_url">https://objectstorage.us-ashburn-1.oraclecloud.com/p/EXAMPLE_PAR_TOKEN/n/NAMESPACE/b/wifi-mapping-telemetry/o</string>
+
+    <!-- Cloud mode: "OCI_OBJECT_STORAGE" or "REST_INGESTION" -->
+    <string name="cloud_provider_mode">OCI_OBJECT_STORAGE</string>
+
+    <!-- Optional Bearer Auth token (leave empty if your PAR doesn't require it) -->
+    <string name="cloud_auth_token"></string>
+</resources>

@@ -9,7 +9,10 @@ import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
+import com.antigravity.wifimapper.R
 import com.antigravity.wifimapper.cloud.CloudBatchUploader
+import com.antigravity.wifimapper.cloud.CloudConfig
+import com.antigravity.wifimapper.cloud.CloudProviderMode
 import com.antigravity.wifimapper.cloud.DeviceIdentityManager
 import com.antigravity.wifimapper.collectors.ConnectedLinkProber
 import com.antigravity.wifimapper.collectors.EnvironmentDwellManager
@@ -58,8 +61,25 @@ class BackgroundMappingService : Service() {
         environmentDwellManager = EnvironmentDwellManager()
 
         // Configure cloud uploader with hardware device ID and dynamic environment state
+        val ociParUrl = getString(R.string.oci_par_base_url)
+        val cloudModeStr = getString(R.string.cloud_provider_mode)
+        val cloudMode = if (cloudModeStr.contains("OCI", ignoreCase = true)) {
+            CloudProviderMode.OCI_OBJECT_STORAGE
+        } else {
+            CloudProviderMode.REST_INGESTION
+        }
+        val authToken = getString(R.string.cloud_auth_token)
+
+        val cloudConfig = CloudConfig(
+            mode = cloudMode,
+            ociParBaseUrl = ociParUrl,
+            authToken = authToken,
+            useOciPut = true
+        )
+
         cloudUploader = CloudBatchUploader(
             context = applicationContext,
+            config = cloudConfig,
             deviceIdProvider = { deviceIdentityManager.getDeviceId() },
             environmentIdProvider = { environmentDwellManager.currentEnvironmentId },
             dwellStateProvider = { environmentDwellManager.currentDwellState.name }
