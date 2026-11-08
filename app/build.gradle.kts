@@ -1,23 +1,26 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.serialization")
 }
 
+val localProperties = Properties()
+val localPropsFile = rootProject.file("local.properties")
+if (localPropsFile.exists()) {
+    localPropsFile.inputStream().use { stream ->
+        localProperties.load(stream)
+    }
+}
+
+val ociUrl: String = System.getenv("OCI_PAR_URL")
+    ?: (localProperties.getProperty("oci.par.url"))
+    ?: "https://objectstorage.us-ashburn-1.oraclecloud.com/p/EXAMPLE_PAR_TOKEN/n/NAMESPACE/b/wifi-mapping-telemetry/o"
+
 android {
     namespace = "com.antigravity.wifimapper"
     compileSdk = 34
-
-    val localProperties = java.util.Properties().apply {
-        val localPropsFile = rootProject.file("local.properties")
-        if (localPropsFile.exists()) {
-            localPropsFile.inputStream().use { load(it) }
-        }
-    }
-
-    val ociUrl = System.getenv("OCI_PAR_URL")
-        ?: localProperties.getProperty("oci.par.url")
-        ?: "https://objectstorage.us-ashburn-1.oraclecloud.com/p/EXAMPLE_PAR_TOKEN/n/NAMESPACE/b/wifi-mapping-telemetry/o"
 
     defaultConfig {
         applicationId = "com.antigravity.wifimapper"
