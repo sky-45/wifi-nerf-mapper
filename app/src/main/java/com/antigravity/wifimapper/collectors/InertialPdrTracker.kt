@@ -124,6 +124,10 @@ class InertialPdrTracker(
                         isStationary = true
                     }
                 } else {
+                    stationaryCounter = 0
+                    isStationary = false
+                }
+
                 // Fallback: If device lacks hardware TYPE_STEP_DETECTOR, detect steps from acceleration peak
                 if (stepDetectorSensor == null && az > 1.8 && (timestampNs - lastStepNs > 320_000_000L)) {
                     handleStep(timestampNs)

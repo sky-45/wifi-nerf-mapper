@@ -44,6 +44,7 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
+                    MappingDashboardScreen(
                         onStartService = {
                             if (hasRequiredPermissions()) {
                                 ContextCompat.startForegroundService(
