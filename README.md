@@ -1,34 +1,37 @@
 # Wi-Fi Indoor Environment Mapper (`wifi-nerf-mapper`)
-> **Production-Ready Background Multi-Modal RF, Inertial & Dwell Data Collection for Indoor NeRF/Floorplan Reconstruction**
+> **Production-Ready Native Android Background RF, Inertial & Dwell Data Collector for Indoor NeRF & Floorplan Reconstruction**
 
-A native Android data collection engine in Kotlin that transforms an unmodified smartphone into a synchronized multi-modal RF, inertial, and barometric mapping sensor—**running 100% in the background with the screen off**.
+A native Android data collection engine in Kotlin that transforms an unmodified smartphone into a synchronized multi-modal RF, inertial, and barometric mapping sensor—**running 100% in the background with the screen off and streaming directly to Oracle Cloud Infrastructure (OCI) Object Storage**.
 
-Designed specifically for crowdsourced and fleet-wide indoor RF mapping, this repository provides the end-to-end mobile collector, multi-device fleet identity, 24/7 environment dwell clustering, adaptive duty-cycling, dual-mode cloud ingestion (Oracle Cloud Infrastructure Object Storage PAR or standard REST), and physics-informed 2D floorplan solvers.
+Designed specifically for crowdsourced and fleet-wide indoor RF mapping, this repository provides the standalone mobile collector, multi-device fleet identity, 24/7 environment dwell clustering, adaptive duty-cycling, offline SQLite store-and-forward buffering, and serverless direct OCI Object Storage streaming.
+
+*(For the cloud reconstruction pipeline, Pose-Graph SLAM, NeRF RF tomography solver, CAD floorplan vectorizer, and 2.5D interactive viewer, see the companion repository: [`wifi-nerf-reconstructor`](https://github.com/sky-45/wifi-nerf-reconstructor.git).)*
 
 ---
 
 ## Architecture Overview
 
 ```
-wifi_env_mapper/
-├── android_app/               # Native Android Kotlin Application
-│   ├── app/src/main/
+wifi-nerf-mapper/
+├── app/
+│   ├── src/main/
 │   │   ├── AndroidManifest.xml # ForegroundService + Wi-Fi/Sensors permissions
+│   │   ├── res/values/
+│   │   │   └── strings.xml     # Zero-code OCI Object Storage PAR configuration
 │   │   └── java/com/antigravity/wifimapper/
 │   │       ├── model/         # @Serializable data classes (NDJSON schema & DwellState)
 │   │       ├── sync/          # PoseRingBuffer (Hardware CLOCK_BOOTTIME SLERP)
 │   │       ├── collectors/    # PDR Tracker, Multi-Band Scanner, Link Prober, RTT Ranger, EnvironmentDwellManager
-│   │       ├── cloud/         # DeviceIdentityManager, CloudBatchUploader (OCI PAR / REST)
+│   │       ├── cloud/         # DeviceIdentityManager, CloudBatchUploader (Direct OCI PAR / REST)
 │   │       ├── service/       # BackgroundMappingService (PARTIAL_WAKE_LOCK & Duty-Cycling)
-│   │       └── ui/            # Jetpack Compose HUD Dashboard
-├── cloud_backend/             # Dual-Mode Ingestion Server (OCI Object Storage PAR / REST)
-│   └── api_server.py
-├── reconstruction/            # Physics-Informed Floorplan Solver (NeRFMap, Multi-Band, RTT)
-│   └── pipeline.py
-├── scripts/                   # ADB configuration & session sync scripts
-│   └── adb_setup_and_pull.sh
-└── tests/                     # Unit & benchmark test suite
-    └── test_pipeline.py
+│   │       └── ui/            # Jetpack Compose HUD Dashboard & Friend Quick-Setup
+│   └── build.gradle.kts       # App-level dependencies & plugins
+├── scripts/
+│   └── adb_setup_and_pull.sh  # Optional developer USB utility (ADB setup, offline spool sync)
+├── build.gradle.kts           # Root Gradle build script
+├── settings.gradle.kts        # Root Gradle settings
+├── .gitignore
+└── README.md
 ```
 
 ```mermaid
@@ -339,27 +342,24 @@ Each batch payload is a Gzipped Newline-Delimited JSON (`.ndjson.gz`) file.
 
 ---
 
-## 5. Quick Start: Local Testing & Benchmark
+## 5. Downstream Reconstruction & Cloud Processing
 
-You can run the unit tests, synthetic session pipeline benchmark, and local dual-mode ingestion server directly on your host:
+The batches collected by this app and streamed to your OCI Object Storage bucket are processed by the companion cloud solver:
+👉 **[`sky-45/wifi-nerf-reconstructor`](https://github.com/sky-45/wifi-nerf-reconstructor.git)**
 
-```bash
-# 1. Run all unit tests (includes Jaccard clustering, OCI PAR, and REST upload tests)
-python3 -m unittest discover -s tests -v
-
-# 2. Run the end-to-end simulation & bandwidth/battery benchmark
-python3 reconstruction/pipeline.py
-
-# 3. Start the dual-mode ingestion server (listening on port 8000)
-python3 cloud_backend/api_server.py
-```
+The reconstructor performs:
+- **Multi-Device Rigid Alignment:** SVD Procrustes SE(2) coordinate transformation to merge data from multiple friends into one coordinate frame.
+- **Pose-Graph SLAM & Free-Space Carving:** Gyroscope drift correction and walkable area stamping.
+- **Multi-AP Localization:** Pinning router coordinates and transmission power $P_0$.
+- **Two-Tier Physics Inversion:** FISTA Sparse Tomography + NeRFMap Coordinate MLP with Fourier features.
+- **CAD Vectorization & 2.5D Web Viewer:** Outputting `.geojson`, `.json`, and interactive HTML floorplans.
 
 ---
 
 ## 6. Building, Cloud Setup & Distribution to Friends
 
 ### 6.1 Zero-Code Cloud Configuration (OCI Bucket / PAR)
-Before building, configure your storage backend directly in `android_app/app/src/main/res/values/strings.xml`:
+Before building, configure your storage backend directly in `app/src/main/res/values/strings.xml`:
 ```xml
 <resources>
     <!-- Set to "OCI_PAR" for direct serverless upload into Oracle Cloud Object Storage -->
@@ -377,9 +377,8 @@ With this set, every phone built with this APK automatically streams encrypted G
 This is the recommended approach to share the app with friends, colleagues, or survey testers.
 
 #### 1. Build the Standalone APK
-From your terminal or command prompt:
+From the repository root in your terminal:
 ```bash
-cd android_app
 ./gradlew assembleDebug
 ```
 *(On Windows: `gradlew.bat assembleDebug`, or in Android Studio: **Build > Build Bundle(s) / APK(s) > Build APK(s)**)*.
@@ -415,8 +414,7 @@ If you are developing locally with a test phone connected via USB:
 # 1. (Optional) Disable Wi-Fi scan throttling via ADB terminal
 bash scripts/adb_setup_and_pull.sh setup
 
-# 2. Build & Install directly via ADB
-cd android_app
+# 2. Build & Install directly via ADB from repository root
 ./gradlew assembleDebug
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```

@@ -40,7 +40,7 @@ enum class CloudProviderMode {
  * Configuration parameters for telemetry cloud uploading.
  */
 data class CloudConfig(
-    val mode: CloudProviderMode = CloudProviderMode.REST_INGESTION,
+    val mode: CloudProviderMode = CloudProviderMode.OCI_OBJECT_STORAGE,
     val restEndpointUrl: String = "http://192.168.1.100:8000/api/v1/telemetry/batches",
     val ociParBaseUrl: String = "https://objectstorage.us-ashburn-1.oraclecloud.com/p/EXAMPLE_PAR_TOKEN/n/NAMESPACE/b/telemetry-bucket/o",
     val authToken: String = "demo-bearer-token",

@@ -50,14 +50,14 @@ case "$1" in
 
   build)
     echo "==> Building Debug APK with Gradle..."
-    cd "$(dirname "$0")/../android_app"
+    cd "$(dirname "$0")/.."
     ./gradlew assembleDebug
     echo "✓ Built: app/build/outputs/apk/debug/app-debug.apk"
     ;;
 
   install)
     echo "==> Installing APK to connected device..."
-    cd "$(dirname "$0")/../android_app"
+    cd "$(dirname "$0")/.."
     adb install -r app/build/outputs/apk/debug/app-debug.apk
     echo "✓ App installed successfully."
     ;;
