@@ -151,6 +151,8 @@ class InertialPdrTracker(
         }
     }
 
+    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+
     private fun handleStep(timestampNs: Long) {
         isStationary = false
         lastStepNs = timestampNs
