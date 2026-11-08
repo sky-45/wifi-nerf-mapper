@@ -1,10 +1,15 @@
 package com.antigravity.wifimapper.ui
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
+import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -22,21 +27,42 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.antigravity.wifimapper.service.BackgroundMappingService
 
-import android.net.Uri
-import android.provider.Settings
-import android.widget.Toast
-
 class MainActivity : ComponentActivity() {
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { _ ->
-        // Permissions handled
+        // Automatically start service and request battery exemption once permissions are granted
+        ensureBatteryOptimizationExemption()
+        if (hasRequiredPermissions() && !BackgroundMappingService.telemetryState.value.isRunning) {
+            ContextCompat.startForegroundService(
+                this,
+                Intent(this, BackgroundMappingService::class.java)
+            )
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        requestRequiredPermissions()
+
+        // Attempt to disable Wi-Fi scan throttling programmatically if system allows it
+        try {
+            Settings.Global.putInt(contentResolver, "wifi_scan_throttle_enabled", 0)
+        } catch (_: SecurityException) {
+            // Normal apps rely on standard scan interval + unthrottled 10Hz connected probe
+        }
+
+        if (hasRequiredPermissions()) {
+            ensureBatteryOptimizationExemption()
+            if (!BackgroundMappingService.telemetryState.value.isRunning) {
+                ContextCompat.startForegroundService(
+                    this,
+                    Intent(this, BackgroundMappingService::class.java)
+                )
+            }
+        } else {
+            requestRequiredPermissions()
+        }
 
         setContent {
             MaterialTheme {
@@ -52,37 +78,34 @@ class MainActivity : ComponentActivity() {
                                     Intent(this, BackgroundMappingService::class.java)
                                 )
                             } else {
-                                Toast.makeText(this, "Please grant location permissions to start mapping", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(
+                                    this,
+                                    "Please grant location permissions to start mapping",
+                                    Toast.LENGTH_SHORT
+                                ).show()
                                 requestRequiredPermissions()
                             }
                         },
                         onStopService = {
                             stopService(Intent(this, BackgroundMappingService::class.java))
-                        },
-                        onOpenDeveloperOptions = {
-                            try {
-                                startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))
-                            } catch (e: Exception) {
-                                Toast.makeText(
-                                    this,
-                                    "Developer Options not enabled. Tap 'Build Number' 7 times in About Phone first.",
-                                    Toast.LENGTH_LONG
-                                ).show()
-                            }
-                        },
-                        onIgnoreBatteryOptimization = {
-                            try {
-                                val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
-                                    data = Uri.parse("package:$packageName")
-                                }
-                                startActivity(intent)
-                            } catch (e: Exception) {
-                                startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
-                            }
                         }
                     )
                 }
             }
+        }
+    }
+
+    private fun ensureBatteryOptimizationExemption() {
+        try {
+            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+            if (!pm.isIgnoringBatteryOptimizations(packageName)) {
+                val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                    data = Uri.parse("package:$packageName")
+                }
+                startActivity(intent)
+            }
+        } catch (_: Exception) {
+            // Ignored if device does not support direct prompt
         }
     }
 
@@ -110,9 +133,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun MappingDashboardScreen(
     onStartService: () -> Unit,
-    onStopService: () -> Unit,
-    onOpenDeveloperOptions: () -> Unit,
-    onIgnoreBatteryOptimization: () -> Unit
+    onStopService: () -> Unit
 ) {
     val telemetry by BackgroundMappingService.telemetryState.collectAsState()
 
@@ -132,7 +153,7 @@ fun MappingDashboardScreen(
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(180.dp),
+                .height(220.dp),
             shape = RoundedCornerShape(8.dp)
         ) {
             Box(
@@ -168,7 +189,7 @@ fun MappingDashboardScreen(
 
         // Metrics Grid
         Card(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 val shortDevice = if (telemetry.deviceId.length > 8) telemetry.deviceId.take(8) + "..." else telemetry.deviceId.ifEmpty { "Pending" }
                 Text("Device Fleet ID: $shortDevice")
                 Text("Environment: ${telemetry.environmentId} [${telemetry.dwellState}]")
@@ -178,41 +199,6 @@ fun MappingDashboardScreen(
                 Text("Cloud Batches: ${telemetry.uploadedBatches} (%.1f KB gz)".format(
                     telemetry.totalUploadedBytesCompressed / 1024.0
                 ))
-            }
-        }
-
-        // Friends Direct Setup Card (No ADB needed)
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-        ) {
-            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(
-                    text = "Quick Setup (No PC/ADB Needed)",
-                    style = MaterialTheme.typography.titleSmall
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedButton(
-                        onClick = onIgnoreBatteryOptimization,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("24/7 Battery", style = MaterialTheme.typography.labelSmall)
-                    }
-                    OutlinedButton(
-                        onClick = onOpenDeveloperOptions,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("Scan Throttling", style = MaterialTheme.typography.labelSmall)
-                    }
-                }
-                Text(
-                    text = "Tip: In Dev Options, toggle off 'Wi-Fi scan throttling' for 10x faster scans.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
         }
 
@@ -231,3 +217,4 @@ fun MappingDashboardScreen(
         }
     }
 }
+
