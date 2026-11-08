@@ -8,6 +8,17 @@ android {
     namespace = "com.antigravity.wifimapper"
     compileSdk = 34
 
+    val localProperties = java.util.Properties().apply {
+        val localPropsFile = rootProject.file("local.properties")
+        if (localPropsFile.exists()) {
+            localPropsFile.inputStream().use { load(it) }
+        }
+    }
+
+    val ociUrl = System.getenv("OCI_PAR_URL")
+        ?: localProperties.getProperty("oci.par.url")
+        ?: "https://objectstorage.us-ashburn-1.oraclecloud.com/p/EXAMPLE_PAR_TOKEN/n/NAMESPACE/b/wifi-mapping-telemetry/o"
+
     defaultConfig {
         applicationId = "com.antigravity.wifimapper"
         minSdk = 29
@@ -19,6 +30,9 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
+
+        resValue("string", "cloud_upload_url", ociUrl)
+        resValue("string", "oci_par_base_url", ociUrl)
     }
 
     buildTypes {

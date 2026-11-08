@@ -358,18 +358,21 @@ The reconstructor performs:
 
 ## 6. Building, Cloud Setup & Distribution to Friends
 
-### 6.1 Zero-Code Cloud Configuration (OCI Bucket / PAR)
-Before building, configure your storage backend directly in `app/src/main/res/values/strings.xml`:
-```xml
-<resources>
-    <!-- Set to "OCI_PAR" for direct serverless upload into Oracle Cloud Object Storage -->
-    <string name="cloud_provider_mode">OCI_PAR</string>
-    <!-- Your Pre-Authenticated Request (PAR) Object prefix URL from OCI Console -->
-    <string name="cloud_upload_url">https://objectstorage.<region>.oraclecloud.com/p/<token>/n/<namespace>/b/<bucket_name>/o/batches/</string>
-    <string name="cloud_auth_token"></string>
-</resources>
+### 6.1 Secure Cloud Configuration (Environment Variable or `local.properties`)
+You do **not** need to edit or risk breaking XML files. You can configure your OCI PAR URL in either of two standard ways:
+
+#### Option A: In `local.properties` (Recommended for Local Dev)
+Add this line to `local.properties` (this file is already git-ignored so your URL is never committed):
+```properties
+oci.par.url=https://objectstorage.<region>.oraclecloud.com/p/<token>/n/<namespace>/b/<bucket_name>/o/batches/
 ```
-With this set, every phone built with this APK automatically streams encrypted Gzip batches into your bucket under `batches/<device_id>/...` with zero client-side authentication or API keys required.
+
+#### Option B: Via Environment Variable (Recommended for CI/CD & Quick Terminal Builds)
+Export it in your shell or pass it directly when running Gradle:
+```bash
+OCI_PAR_URL="https://objectstorage.<region>.oraclecloud.com/p/<token>/n/<namespace>/b/<bucket_name>/o/batches/" ./gradlew assembleDebug
+```
+Gradle automatically injects this value into the app at build time with zero XML editing.
 
 ---
 
