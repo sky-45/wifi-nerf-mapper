@@ -220,7 +220,8 @@ class CloudBatchUploader(
                 // Format: {baseUrl}/fleet/{device_id}/{env_id}/batch_{seq}.ndjson.gz
                 val cleanDeviceId = sanitizePathSegment(deviceId)
                 val cleanEnvId = sanitizePathSegment(envId)
-                val url = "${config.ociParBaseUrl.trimEnd('/')}/fleet/$cleanDeviceId/$cleanEnvId/batch_${seq}.ndjson.gz"
+                val base = config.ociParBaseUrl.trim().trimEnd('/')
+                val url = "$base/fleet/$cleanDeviceId/$cleanEnvId/batch_${seq}.ndjson.gz"
 
                 val builder = Request.Builder()
                     .url(url)

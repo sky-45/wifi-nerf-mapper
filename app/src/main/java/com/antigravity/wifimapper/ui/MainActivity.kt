@@ -44,9 +44,16 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    MappingDashboardScreen(
                         onStartService = {
-                            startForegroundService(Intent(this, BackgroundMappingService::class.java))
+                            if (hasRequiredPermissions()) {
+                                ContextCompat.startForegroundService(
+                                    this,
+                                    Intent(this, BackgroundMappingService::class.java)
+                                )
+                            } else {
+                                Toast.makeText(this, "Please grant location permissions to start mapping", Toast.LENGTH_SHORT).show()
+                                requestRequiredPermissions()
+                            }
                         },
                         onStopService = {
                             stopService(Intent(this, BackgroundMappingService::class.java))
@@ -89,6 +96,13 @@ class MainActivity : ComponentActivity() {
             permissions.add(Manifest.permission.NEARBY_WIFI_DEVICES)
         }
         permissionLauncher.launch(permissions.toTypedArray())
+    }
+
+    private fun hasRequiredPermissions(): Boolean {
+        return ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
     }
 }
 

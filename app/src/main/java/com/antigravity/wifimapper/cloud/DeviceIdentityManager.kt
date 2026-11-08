@@ -6,8 +6,6 @@ import android.content.pm.PackageManager
 import android.hardware.Sensor
 import android.hardware.SensorManager
 import android.os.Build
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import java.util.UUID
@@ -51,9 +49,7 @@ data class DeviceIdentityInfo(
  */
 class DeviceIdentityManager(private val context: Context) {
 
-    private val prefs: SharedPreferences by lazy {
-        initSecurePreferences()
-    }
+    private val prefs: SharedPreferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     private val cachedDeviceId: String by lazy {
         resolveOrGenerateDeviceId()
@@ -64,32 +60,8 @@ class DeviceIdentityManager(private val context: Context) {
     }
 
     /**
-     * Initializes EncryptedSharedPreferences with hardware-backed Keystore MasterKey.
-     * Includes graceful fallback to standard private SharedPreferences if Keystore
-     * provider is unavailable (e.g., custom ROMs, legacy emulators).
-     */
-    private fun initSecurePreferences(): SharedPreferences {
-        return try {
-            val masterKey = MasterKey.Builder(context)
-                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-                .build()
-
-            EncryptedSharedPreferences.create(
-                context,
-                SECURE_PREFS_NAME,
-                masterKey,
-                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-            )
-        } catch (e: Exception) {
-            // Fallback to standard private SharedPreferences
-            context.getSharedPreferences(FALLBACK_PREFS_NAME, Context.MODE_PRIVATE)
-        }
-    }
-
-    /**
-     * Retrieves the persistent hardware-backed device UUID. If this is the first execution,
-     * a new UUIDv4 is generated and securely saved.
+     * Retrieves the persistent device UUID. If this is the first execution,
+     * a new UUIDv4 is generated and saved.
      */
     private fun resolveOrGenerateDeviceId(): String {
         val existingId = prefs.getString(KEY_DEVICE_ID, null)
@@ -151,8 +123,7 @@ class DeviceIdentityManager(private val context: Context) {
     fun getDeviceDescription(): String = "${Build.MANUFACTURER} ${Build.MODEL}"
 
     companion object {
-        private const val SECURE_PREFS_NAME = "wifi_mapper_secure_identity"
-        private const val FALLBACK_PREFS_NAME = "wifi_mapper_identity_fallback"
+        private const val PREFS_NAME = "wifi_mapper_identity"
         private const val KEY_DEVICE_ID = "persistent_installation_device_id"
     }
 }

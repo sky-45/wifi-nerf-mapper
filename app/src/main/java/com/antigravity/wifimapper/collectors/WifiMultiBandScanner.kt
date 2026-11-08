@@ -44,7 +44,11 @@ class WifiMultiBandScanner(
     fun start(intervalMs: Long = 1000L) {
         currentIntervalMs = intervalMs
         val filter = IntentFilter(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION)
-        context.registerReceiver(receiver, filter)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            context.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            context.registerReceiver(receiver, filter)
+        }
         startScanLoop()
     }
 

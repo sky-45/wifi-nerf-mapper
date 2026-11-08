@@ -53,7 +53,8 @@ class BackgroundMappingService : Service() {
 
         val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
         wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "WifiMapper::WakeLock").apply {
-            acquire(60 * 60 * 1000L) // 1 hr max safe lease
+            setReferenceCounted(false)
+            acquire()
         }
 
         // Initialize fleet device identity and 24/7 dwell cluster manager

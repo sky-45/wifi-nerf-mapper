@@ -49,6 +49,7 @@ class InertialPdrTracker(
     // ZUPT / Stationary Detection
     private var isStationary = true
     private var stationaryCounter = 0
+    private var lastStepNs = 0L
 
     // Barometer Altitude Lock
     private var baselinePressureHpa = 1013.25f
@@ -123,30 +124,14 @@ class InertialPdrTracker(
                         isStationary = true
                     }
                 } else {
-                    stationaryCounter = 0
-                    isStationary = false
+                // Fallback: If device lacks hardware TYPE_STEP_DETECTOR, detect steps from acceleration peak
+                if (stepDetectorSensor == null && az > 1.8 && (timestampNs - lastStepNs > 320_000_000L)) {
+                    handleStep(timestampNs)
                 }
             }
 
             Sensor.TYPE_STEP_DETECTOR -> {
-                isStationary = false
-                val bounceRange = (verticalBounceMax - verticalBounceMin).coerceAtLeast(0.1)
-                // Weinberg Stride Length formula: L = K * (bounce_range)^(1/4)
-                val strideLengthM = (weinbergK * Math.pow(bounceRange, 0.25)).coerceIn(0.45, 0.95)
-
-                // Reset bounce tracking for next step
-                verticalBounceMax = 0.0
-                verticalBounceMin = 0.0
-
-                // Advance 2D coordinates along current heading
-                posX += strideLengthM * cos(currentHeadingYawRad)
-                posY += strideLengthM * sin(currentHeadingYawRad)
-
-                _totalSteps.value += 1
-                _totalDistanceM.value += strideLengthM
-
-                val pose = pushPoseToBuffer(timestampNs)
-                onStepDetectedListener?.invoke(_totalSteps.value, strideLengthM, pose)
+                handleStep(timestampNs)
             }
 
             Sensor.TYPE_PRESSURE -> {
@@ -162,7 +147,27 @@ class InertialPdrTracker(
         }
     }
 
-    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+    private fun handleStep(timestampNs: Long) {
+        isStationary = false
+        lastStepNs = timestampNs
+        val bounceRange = (verticalBounceMax - verticalBounceMin).coerceAtLeast(0.1)
+        // Weinberg Stride Length formula: L = K * (bounce_range)^(1/4)
+        val strideLengthM = (weinbergK * Math.pow(bounceRange, 0.25)).coerceIn(0.45, 0.95)
+
+        // Reset bounce tracking for next step
+        verticalBounceMax = 0.0
+        verticalBounceMin = 0.0
+
+        // Advance 2D coordinates along current heading
+        posX += strideLengthM * cos(currentHeadingYawRad)
+        posY += strideLengthM * sin(currentHeadingYawRad)
+
+        _totalSteps.value += 1
+        _totalDistanceM.value += strideLengthM
+
+        val pose = pushPoseToBuffer(timestampNs)
+        onStepDetectedListener?.invoke(_totalSteps.value, strideLengthM, pose)
+    }
 
     /**
      * Corrects dead-reckoning drift using an external Wi-Fi RTT anchor measurement or loop closure.
