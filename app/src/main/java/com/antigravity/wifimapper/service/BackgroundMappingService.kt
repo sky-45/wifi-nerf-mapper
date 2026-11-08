@@ -200,14 +200,24 @@ class BackgroundMappingService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     private fun startForegroundNotification() {
-        val channelId = "wifi_mapping_channel"
+        val channelId = "wifi_mapping_silent_channel"
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val nm = getSystemService(NotificationManager::class.java)
+            // Delete old channel if it exists so system does not retain old LOW importance
+            nm?.deleteNotificationChannel("wifi_mapping_channel")
+
             val channel = NotificationChannel(
                 channelId,
-                "Wi-Fi Mapping Service",
-                NotificationManager.IMPORTANCE_LOW
-            )
-            val nm = getSystemService(NotificationManager::class.java)
+                "Background Service",
+                NotificationManager.IMPORTANCE_MIN
+            ).apply {
+                description = "Silent background telemetry sync"
+                setShowBadge(false)
+                enableLights(false)
+                enableVibration(false)
+                setSound(null, null)
+                lockscreenVisibility = Notification.VISIBILITY_SECRET
+            }
             nm?.createNotificationChannel(channel)
         }
 
@@ -219,11 +229,14 @@ class BackgroundMappingService : Service() {
         )
 
         val notification = NotificationCompat.Builder(this, channelId)
-            .setContentTitle("Wi-Fi Mapping Active")
-            .setContentText("Collecting background multi-band Wi-Fi and PDR telemetry")
+            .setContentTitle("Wi-Fi Mapper")
             .setSmallIcon(android.R.drawable.ic_dialog_map)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
+            .setSilent(true)
+            .setPriority(NotificationCompat.PRIORITY_MIN)
+            .setVisibility(NotificationCompat.VISIBILITY_SECRET)
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_DEFERRED)
             .build()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {

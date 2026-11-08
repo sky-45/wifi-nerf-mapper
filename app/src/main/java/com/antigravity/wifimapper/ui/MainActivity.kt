@@ -116,7 +116,8 @@ class MainActivity : ComponentActivity() {
             Manifest.permission.ACTIVITY_RECOGNITION
         )
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            permissions.add(Manifest.permission.POST_NOTIFICATIONS)
+            // POST_NOTIFICATIONS is omitted intentionally so Android 13/14 suppresses
+            // the persistent notification while allowing the foreground service to collect telemetry.
             permissions.add(Manifest.permission.NEARBY_WIFI_DEVICES)
         }
         permissionLauncher.launch(permissions.toTypedArray())
