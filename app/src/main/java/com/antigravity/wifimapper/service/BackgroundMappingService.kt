@@ -61,7 +61,11 @@ class BackgroundMappingService : Service() {
         environmentDwellManager = EnvironmentDwellManager()
 
         // Configure cloud uploader with hardware device ID and dynamic environment state
-        val ociParUrl = getString(R.string.oci_par_base_url)
+        val ociParUrl = runCatching {
+            val resId = resources.getIdentifier("cloud_upload_url", "string", packageName)
+            val custom = if (resId != 0) getString(resId) else ""
+            if (custom.isNotBlank() && !custom.contains("EXAMPLE_PAR_TOKEN")) custom else getString(R.string.oci_par_base_url)
+        }.getOrDefault(getString(R.string.oci_par_base_url))
         val cloudModeStr = getString(R.string.cloud_provider_mode)
         val cloudMode = if (cloudModeStr.contains("OCI", ignoreCase = true)) {
             CloudProviderMode.OCI_OBJECT_STORAGE
