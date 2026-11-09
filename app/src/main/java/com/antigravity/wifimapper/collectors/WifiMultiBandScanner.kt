@@ -100,8 +100,9 @@ class WifiMultiBandScanner(
             val hwTimestampNs = sr.timestamp * 1000L // sr.timestamp is microseconds since boot
             val scanAgeMs = nowBootMs - (sr.timestamp / 1000L)
 
-            // Discard stale cached APs older than 2.0s
-            if (scanAgeMs > 2000L || scanAgeMs < -100L) continue
+            // Android multi-band sweeps take 3.5-4.5s across 2.4 GHz, 5 GHz, and 6 GHz DFS bands.
+            // Retain scans within 15.0s while relying on loggedScanKeys to prevent duplicate logging.
+            if (scanAgeMs > 15000L || scanAgeMs < -200L) continue
 
             val key = "${sr.BSSID}_${sr.timestamp}"
             if (loggedScanKeys.containsKey(key)) continue
@@ -182,10 +183,10 @@ class WifiMultiBandScanner(
         fun resolveApGroupId(bssid: String, ssid: String?): String {
             val parts = bssid.split(":")
             if (parts.size == 6) {
-                // Routers usually vary only the last octet or low bits for multi-band virtual BSSIDs
-                val prefix = "${parts[0]}:${parts[1]}:${parts[2]}:${parts[3]}:${parts[4]}"
-                val cleanSsid = ssid?.replace("_5G", "")?.replace("_2G", "")?.replace("-5G", "") ?: ""
-                return "$prefix-$cleanSsid"
+                // Group dual-band virtual interfaces on the same physical router
+                val cleanSsid = ssid?.replace(Regex("(?i)[ _-]*(5G|2G|PLUS|5GPLUS|EXT|MESH|GUEST)"), "")?.trim() ?: ""
+                val hwStem = "${parts[1]}:${parts[2]}:${parts[4]}:${parts[5]}"
+                return if (cleanSsid.isNotBlank()) "$cleanSsid-$hwStem" else "${parts[0]}:${parts[1]}:${parts[2]}:${parts[3]}:${parts[4]}"
             }
             return bssid
         }

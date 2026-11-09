@@ -112,7 +112,7 @@ class BackgroundMappingService : Service() {
         pdrTracker = InertialPdrTracker(applicationContext, poseRingBuffer)
         pdrTracker.onStepDetectedListener = { steps, strideM, pose ->
             val stepEvent = com.antigravity.wifimapper.model.MagBaroPdrEvent(
-                timestampNs = System.nanoTime(),
+                timestampNs = android.os.SystemClock.elapsedRealtimeNanos(),
                 deviceId = deviceIdentityManager.getDeviceId(),
                 environmentId = environmentDwellManager.currentEnvironmentId,
                 dwellState = environmentDwellManager.currentDwellState.name,

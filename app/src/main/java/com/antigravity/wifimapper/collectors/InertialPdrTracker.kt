@@ -102,18 +102,37 @@ class InertialPdrTracker(
                 quatY = q[2].toDouble()
                 quatZ = q[3].toDouble()
 
-                // Extract yaw angle around world vertical axis
-                val sinyCosp = 2.0 * (quatW * quatZ + quatX * quatY)
-                val cosyCosp = 1.0 - 2.0 * (quatY * quatY + quatZ * quatZ)
-                currentHeadingYawRad = kotlin.math.atan2(sinyCosp, cosyCosp)
+                // Tilt-compensated gravity-projected forward azimuth:
+                // Projects the phone's forward axis (+Y, top of screen) onto Earth horizontal plane (East, North)
+                // avoiding Euler gimbal singularities when phone is held naturally at an angle.
+                val r01 = 2.0 * (quatX * quatY - quatW * quatZ)
+                val r11 = 1.0 - 2.0 * (quatX * quatX + quatZ * quatZ)
+                val horizNormSq = r01 * r01 + r11 * r11
+                if (horizNormSq > 0.04) {
+                    currentHeadingYawRad = kotlin.math.atan2(r01, r11)
+                } else {
+                    // Fallback to Euler yaw if phone is pointed nearly straight up/down
+                    val siny = 2.0 * (quatW * quatZ + quatX * quatY)
+                    val cosy = 1.0 - 2.0 * (quatY * quatY + quatZ * quatZ)
+                    currentHeadingYawRad = kotlin.math.atan2(siny, cosy)
+                }
 
                 pushPoseToBuffer(timestampNs)
             }
 
             Sensor.TYPE_LINEAR_ACCELERATION -> {
+                // Project body linear acceleration onto Earth gravity vertical axis:
+                // a_v = R_20 * a_x + R_21 * a_y + R_22 * a_z
+                val r20 = 2.0 * (quatX * quatZ - quatW * quatY)
+                val r21 = 2.0 * (quatY * quatZ + quatW * quatX)
+                val r22 = 1.0 - 2.0 * (quatX * quatX + quatY * quatY)
+                val ax = event.values[0].toDouble()
+                val ay = event.values[1].toDouble()
                 val az = event.values[2].toDouble()
-                if (az > verticalBounceMax) verticalBounceMax = az
-                if (az < verticalBounceMin) verticalBounceMin = az
+                val azWorld = r20 * ax + r21 * ay + r22 * az
+
+                if (azWorld > verticalBounceMax) verticalBounceMax = azWorld
+                if (azWorld < verticalBounceMin) verticalBounceMin = azWorld
 
                 val accMag = sqrt(
                     event.values[0] * event.values[0] +
@@ -132,7 +151,7 @@ class InertialPdrTracker(
                 }
 
                 // Fallback: If device lacks hardware TYPE_STEP_DETECTOR, detect steps from acceleration peak
-                if (stepDetectorSensor == null && az > 1.8 && (timestampNs - lastStepNs > 320_000_000L)) {
+                if (stepDetectorSensor == null && azWorld > 1.8 && (timestampNs - lastStepNs > 320_000_000L)) {
                     handleStep(timestampNs)
                 }
             }
@@ -185,7 +204,7 @@ class InertialPdrTracker(
     fun applyEkfPositionCorrection(correctedX: Double, correctedY: Double, weight: Double = 0.3) {
         posX = posX * (1.0 - weight) + correctedX * weight
         posY = posY * (1.0 - weight) + correctedY * weight
-        pushPoseToBuffer(System.nanoTime())
+        pushPoseToBuffer(android.os.SystemClock.elapsedRealtimeNanos())
     }
 
     private fun pushPoseToBuffer(timestampNs: Long): Pose6DoF {

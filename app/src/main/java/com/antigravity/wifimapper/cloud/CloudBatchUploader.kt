@@ -280,7 +280,7 @@ class CloudBatchUploader(
         dwellState: String,
         tier: String
     ): BatchEnvelope {
-        val nowNs = System.nanoTime()
+        val nowNs = android.os.SystemClock.elapsedRealtimeNanos()
         val startNs = events.minOfOrNull { it.timestampNs } ?: nowNs
         val endNs = events.maxOfOrNull { it.timestampNs } ?: nowNs
 
