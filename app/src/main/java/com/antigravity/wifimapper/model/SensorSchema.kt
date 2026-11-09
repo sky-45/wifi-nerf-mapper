@@ -45,6 +45,7 @@ data class BatchEnvelope(
     @SerialName("environment_id") override val environmentId: String = "",
     @SerialName("dwell_state") override val dwellState: String = "IN_TRANSIT",
     @SerialName("batch_seq") val batchSeq: Long,
+    @SerialName("tier") val tier: String = "hf",
     @SerialName("start_time_ns") val startTimeNs: Long,
     @SerialName("end_time_ns") val endTimeNs: Long,
     @SerialName("event_count") val eventCount: Int,

@@ -108,9 +108,21 @@ class BackgroundMappingService : Service() {
             )
         }
 
-        // High-rate PDR step tracker
+        // High-rate PDR step tracker (100% background inertial dead-reckoning)
         pdrTracker = InertialPdrTracker(applicationContext, poseRingBuffer)
         pdrTracker.onStepDetectedListener = { steps, strideM, pose ->
+            val stepEvent = com.antigravity.wifimapper.model.MagBaroPdrEvent(
+                timestampNs = System.nanoTime(),
+                deviceId = deviceIdentityManager.getDeviceId(),
+                environmentId = environmentDwellManager.currentEnvironmentId,
+                dwellState = environmentDwellManager.currentDwellState.name,
+                stepDetected = true,
+                strideLengthM = strideM,
+                isStationary = pose.isStationary,
+                pose = pose
+            )
+            cloudUploader.enqueueHfEvent(stepEvent)
+
             _telemetryState.value = _telemetryState.value.copy(
                 totalSteps = steps,
                 totalDistanceM = pdrTracker.totalDistanceM.value,
@@ -119,7 +131,7 @@ class BackgroundMappingService : Service() {
         }
         pdrTracker.start()
 
-        // Multi-band Wi-Fi scanner connected to dwell clustering
+        // Multi-band Wi-Fi scanner connected to dwell clustering -> LF architectural scans
         wifiScanner = WifiMultiBandScanner(applicationContext, poseRingBuffer) { scanBatch ->
             // Update 24/7 environment dwell clustering
             environmentDwellManager.processScanBatch(scanBatch.scans)
@@ -130,7 +142,7 @@ class BackgroundMappingService : Service() {
                 environmentId = environmentDwellManager.currentEnvironmentId,
                 dwellState = environmentDwellManager.currentDwellState.name
             )
-            cloudUploader.enqueueEvent(enrichedBatch)
+            cloudUploader.enqueueLfEvent(enrichedBatch)
 
             _telemetryState.value = _telemetryState.value.copy(
                 visibleApCount = scanBatch.scans.size,
@@ -141,25 +153,25 @@ class BackgroundMappingService : Service() {
         }
         wifiScanner.start(intervalMs = environmentDwellManager.recommendedWifiScanIntervalMs)
 
-        // Connected AP probing
+        // Connected AP probing -> HF live telemetry
         linkProber = ConnectedLinkProber(applicationContext, poseRingBuffer) { probeEvent ->
             val enrichedProbe = probeEvent.copy(
                 deviceId = deviceIdentityManager.getDeviceId(),
                 environmentId = environmentDwellManager.currentEnvironmentId,
                 dwellState = environmentDwellManager.currentDwellState.name
             )
-            cloudUploader.enqueueEvent(enrichedProbe)
+            cloudUploader.enqueueHfEvent(enrichedProbe)
         }
         linkProber.start(intervalMs = 100L)
 
-        // 802.11mc FTM RTT Ranger
+        // 802.11mc FTM RTT Ranger -> LF architectural scans
         rttRanger = WifiRttRanger(applicationContext, poseRingBuffer) { rttEvent ->
             val enrichedRtt = rttEvent.copy(
                 deviceId = deviceIdentityManager.getDeviceId(),
                 environmentId = environmentDwellManager.currentEnvironmentId,
                 dwellState = environmentDwellManager.currentDwellState.name
             )
-            cloudUploader.enqueueEvent(enrichedRtt)
+            cloudUploader.enqueueLfEvent(enrichedRtt)
             _telemetryState.value = _telemetryState.value.copy(
                 rttAnchorCount = _telemetryState.value.rttAnchorCount + 1
             )
