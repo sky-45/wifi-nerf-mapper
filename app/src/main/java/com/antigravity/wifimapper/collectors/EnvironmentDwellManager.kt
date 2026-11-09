@@ -35,8 +35,8 @@ class EnvironmentDwellManager(
     // Current cluster signature (set of BSSIDs in uppercase canonical format)
     private var activeClusterBssids = setOf<String>()
 
-    // Current state
-    var currentEnvironmentId: String = "env_uninitialized"
+    // Current state (Server manages macro-environment clustering and floor assignment)
+    var currentEnvironmentId: String = "raw"
         private set
 
     var currentDwellState: DwellState = DwellState.IN_TRANSIT
@@ -99,10 +99,10 @@ class EnvironmentDwellManager(
             return currentDwellState
         }
 
-        // Initial scan: establish the initial environment cluster
+        // Initial scan: establish initial activity window
         if (activeClusterBssids.isEmpty()) {
             activeClusterBssids = top8Bssids
-            currentEnvironmentId = computeEnvironmentHash(top8Bssids)
+            currentEnvironmentId = "raw"
             dwellStartBootNs = SystemClock.elapsedRealtimeNanos()
             consecutiveMatchingScans = 1
             consecutiveMismatchScans = 0
@@ -136,10 +136,8 @@ class EnvironmentDwellManager(
             // If mismatch persists for 2 or more scans, transition to IN_TRANSIT
             if (consecutiveMismatchScans >= 2) {
                 val oldState = currentDwellState
-                val newEnvId = computeEnvironmentHash(top8Bssids)
-
                 activeClusterBssids = top8Bssids
-                currentEnvironmentId = newEnvId
+                currentEnvironmentId = "raw"
                 dwellStartBootNs = SystemClock.elapsedRealtimeNanos()
                 consecutiveMismatchScans = 0
 

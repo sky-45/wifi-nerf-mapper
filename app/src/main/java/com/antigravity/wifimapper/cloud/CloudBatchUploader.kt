@@ -222,7 +222,11 @@ class CloudBatchUploader(
 
         val cleanDev = sanitizePathSegment(deviceId)
         val cleanEnv = sanitizePathSegment(envId)
-        val spoolFile = File(hfSpoolDir, "batch_hf_${cleanDev}_${cleanEnv}_${seq}_${batchId}.ndjson.gz")
+        val spoolFile = if (cleanEnv.isBlank() || cleanEnv == "raw" || cleanEnv == "env_uninitialized") {
+            File(hfSpoolDir, "batch_hf_${cleanDev}_${seq}_${batchId}.ndjson.gz")
+        } else {
+            File(hfSpoolDir, "batch_hf_${cleanDev}_${cleanEnv}_${seq}_${batchId}.ndjson.gz")
+        }
         try {
             FileOutputStream(spoolFile).use { it.write(gzippedBytes) }
         } catch (e: Exception) {
@@ -254,7 +258,11 @@ class CloudBatchUploader(
 
         val cleanDev = sanitizePathSegment(deviceId)
         val cleanEnv = sanitizePathSegment(envId)
-        val spoolFile = File(lfSpoolDir, "batch_lf_${cleanDev}_${cleanEnv}_${seq}_${batchId}.ndjson.gz")
+        val spoolFile = if (cleanEnv.isBlank() || cleanEnv == "raw" || cleanEnv == "env_uninitialized") {
+            File(lfSpoolDir, "batch_lf_${cleanDev}_${seq}_${batchId}.ndjson.gz")
+        } else {
+            File(lfSpoolDir, "batch_lf_${cleanDev}_${cleanEnv}_${seq}_${batchId}.ndjson.gz")
+        }
         try {
             FileOutputStream(spoolFile).use { it.write(gzippedBytes) }
         } catch (e: Exception) {
@@ -328,11 +336,16 @@ class CloudBatchUploader(
 
         val request = when (config.mode) {
             CloudProviderMode.OCI_OBJECT_STORAGE -> {
-                // Strictly tiered format: {baseUrl}fleet/{device_id}/{env_id}/{hf|lf}/batch_{seq}.ndjson.gz
+                // Tiered device-centric format: {baseUrl}fleet/{device_id}/{hf|lf}/batch_{seq}.ndjson.gz
+                // Or with environment if present: {baseUrl}fleet/{device_id}/{env_id}/{hf|lf}/batch_{seq}.ndjson.gz
                 val cleanDeviceId = sanitizePathSegment(deviceId)
-                val cleanEnvId = sanitizePathSegment(envId)
                 val base = config.ociParBaseUrl.trim().trimEnd('/')
-                val url = "$base/fleet/$cleanDeviceId/$cleanEnvId/$tierSegment/batch_${seq}.ndjson.gz"
+                val url = if (envId.isBlank() || envId == "raw" || envId == "env_uninitialized") {
+                    "$base/fleet/$cleanDeviceId/$tierSegment/batch_${seq}.ndjson.gz"
+                } else {
+                    val cleanEnvId = sanitizePathSegment(envId)
+                    "$base/fleet/$cleanDeviceId/$cleanEnvId/$tierSegment/batch_${seq}.ndjson.gz"
+                }
 
                 val builder = Request.Builder()
                     .url(url)
@@ -408,10 +421,12 @@ class CloudBatchUploader(
             // Avoid re-uploading file currently being written
             if (System.currentTimeMillis() - file.lastModified() < 3000L) continue
 
-            // Filename format: batch_{hf|lf}_{dev}_{env}_{seq}_{batchId}.ndjson.gz
+            // Filename format: batch_{hf|lf}_{dev}_{env}_{seq}_{batchId}.ndjson.gz or batch_{hf|lf}_{dev}_{seq}_{batchId}.ndjson.gz
             val parts = file.name.removeSuffix(".ndjson.gz").split("_")
             val (deviceId, envId, seq, batchId) = if (parts.size >= 6 && parts[0] == "batch") {
                 Tuple4(parts[2], parts[3], parts[4].toLongOrNull() ?: 0L, parts[5])
+            } else if (parts.size == 5 && parts[0] == "batch") {
+                Tuple4(parts[2], "raw", parts[3].toLongOrNull() ?: 0L, parts[4])
             } else {
                 Tuple4(deviceIdProvider(), environmentIdProvider(), 0L, UUID.randomUUID().toString())
             }

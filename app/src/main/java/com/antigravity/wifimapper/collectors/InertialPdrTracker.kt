@@ -51,8 +51,11 @@ class InertialPdrTracker(
     private var stationaryCounter = 0
     private var lastStepNs = 0L
 
-    // Barometer Altitude Lock
-    private var baselinePressureHpa = 1013.25f
+    // Barometer Raw Pressure & Elevation Tracking
+    var latestPressureHpa: Float = 0f
+        private set
+    var baselinePressureHpa: Float = 1013.25f
+        private set
     private var hasBaselinePressure = false
 
     // Telemetry Flow
@@ -140,6 +143,7 @@ class InertialPdrTracker(
 
             Sensor.TYPE_PRESSURE -> {
                 val pressure = event.values[0]
+                latestPressureHpa = pressure
                 if (!hasBaselinePressure) {
                     baselinePressureHpa = pressure
                     hasBaselinePressure = true

@@ -116,6 +116,7 @@ class BackgroundMappingService : Service() {
                 deviceId = deviceIdentityManager.getDeviceId(),
                 environmentId = environmentDwellManager.currentEnvironmentId,
                 dwellState = environmentDwellManager.currentDwellState.name,
+                pressureHpa = pdrTracker.latestPressureHpa,
                 stepDetected = true,
                 strideLengthM = strideM,
                 isStationary = pose.isStationary,
