@@ -195,6 +195,16 @@ class BackgroundMappingService : Service() {
         )
     }
 
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // START_STICKY instructs Android to recreate and restart the service if killed under memory pressure
+        return START_STICKY
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        // Keep foreground service alive even if the user swipes away MainActivity from Recent Apps
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         wifiScanner.stop()
