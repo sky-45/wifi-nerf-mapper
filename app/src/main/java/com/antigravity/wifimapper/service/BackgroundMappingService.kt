@@ -89,6 +89,7 @@ class BackgroundMappingService : Service() {
             _telemetryState.value = _telemetryState.value.copy(
                 latestLat = snap.lat,
                 latestLon = snap.lon,
+                latestMslAltitudeM = snap.mslAltitudeM,
                 latestGnssAccuracyM = snap.accuracyM,
                 latestGnssProvider = snap.provider
             )

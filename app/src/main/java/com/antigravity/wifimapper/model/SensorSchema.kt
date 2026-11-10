@@ -40,6 +40,8 @@ data class GnssSnapshot(
     val lat: Double,
     val lon: Double,
     @SerialName("altitude_m") val altitudeM: Double? = null,
+    @SerialName("msl_altitude_m") val mslAltitudeM: Double? = null,
+    @SerialName("geoid_sep_m") val geoidSepM: Float? = null,
     @SerialName("accuracy_m") val accuracyM: Float? = null,
     val provider: String? = null,
     @SerialName("bearing_deg") val bearingDeg: Float? = null,
@@ -67,6 +69,8 @@ data class BatchEnvelope(
     val lat: Double? = null,
     val lon: Double? = null,
     @SerialName("gnss_altitude_m") val gnssAltitudeM: Double? = null,
+    @SerialName("gnss_msl_altitude_m") val gnssMslAltitudeM: Double? = null,
+    @SerialName("gnss_geoid_sep_m") val gnssGeoidSepM: Float? = null,
     @SerialName("gnss_accuracy_m") val gnssAccuracyM: Float? = null,
     @SerialName("gnss_provider") val gnssProvider: String? = null,
     override val pose: Pose6DoF? = null
@@ -191,6 +195,8 @@ data class GnssLocationEvent(
     val lat: Double,
     val lon: Double,
     @SerialName("altitude_m") val altitudeM: Double? = null,
+    @SerialName("msl_altitude_m") val mslAltitudeM: Double? = null,
+    @SerialName("geoid_sep_m") val geoidSepM: Float? = null,
     @SerialName("accuracy_m") val accuracyM: Float? = null,
     val provider: String = "unknown",
     @SerialName("bearing_deg") val bearingDeg: Float? = null,
@@ -216,6 +222,7 @@ data class LiveMappingTelemetry(
     val pendingUploads: Int = 0,
     val latestLat: Double? = null,
     val latestLon: Double? = null,
+    val latestMslAltitudeM: Double? = null,
     val latestGnssAccuracyM: Float? = null,
     val latestGnssProvider: String? = null
 )

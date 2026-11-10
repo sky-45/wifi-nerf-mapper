@@ -199,7 +199,8 @@ fun MappingDashboardScreen(
                 Text("RTT Anchor Hits: ${telemetry.rttAnchorCount}")
                 val gnssText = if (telemetry.latestLat != null && telemetry.latestLon != null) {
                     val accStr = telemetry.latestGnssAccuracyM?.let { " ±%.0fm".format(it) } ?: ""
-                    "Earth GNSS: %.5f, %.5f%s".format(telemetry.latestLat, telemetry.latestLon, accStr)
+                    val altStr = telemetry.latestMslAltitudeM?.let { " | %.0fm MSL".format(it) } ?: ""
+                    "Earth GNSS: %.5f, %.5f%s%s".format(telemetry.latestLat, telemetry.latestLon, accStr, altStr)
                 } else {
                     "Earth GNSS: Acquiring fix..."
                 }

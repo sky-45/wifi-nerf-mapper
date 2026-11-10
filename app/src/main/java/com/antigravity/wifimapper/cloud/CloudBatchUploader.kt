@@ -308,6 +308,8 @@ class CloudBatchUploader(
             lat = gnss?.lat,
             lon = gnss?.lon,
             gnssAltitudeM = gnss?.altitudeM,
+            gnssMslAltitudeM = gnss?.mslAltitudeM,
+            gnssGeoidSepM = gnss?.geoidSepM,
             gnssAccuracyM = gnss?.accuracyM,
             gnssProvider = gnss?.provider
         )
