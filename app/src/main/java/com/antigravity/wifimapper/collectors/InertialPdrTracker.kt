@@ -177,6 +177,10 @@ class InertialPdrTracker(
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
 
     private fun handleStep(timestampNs: Long) {
+        // Debounce hardware TYPE_STEP_DETECTOR double/triple triggers within 350ms
+        if (lastStepNs > 0L && (timestampNs - lastStepNs) < 350_000_000L) {
+            return
+        }
         isStationary = false
         lastStepNs = timestampNs
         val bounceRange = (verticalBounceMax - verticalBounceMin).coerceAtLeast(0.1)
