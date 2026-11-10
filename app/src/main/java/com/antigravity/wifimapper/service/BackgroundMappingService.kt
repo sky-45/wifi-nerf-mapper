@@ -16,6 +16,7 @@ import com.antigravity.wifimapper.cloud.CloudProviderMode
 import com.antigravity.wifimapper.cloud.DeviceIdentityManager
 import com.antigravity.wifimapper.collectors.ConnectedLinkProber
 import com.antigravity.wifimapper.collectors.EnvironmentDwellManager
+import com.antigravity.wifimapper.collectors.GnssLocationCollector
 import com.antigravity.wifimapper.collectors.InertialPdrTracker
 import com.antigravity.wifimapper.collectors.WifiMultiBandScanner
 import com.antigravity.wifimapper.collectors.WifiRttRanger
@@ -43,6 +44,7 @@ class BackgroundMappingService : Service() {
     private lateinit var wifiScanner: WifiMultiBandScanner
     private lateinit var linkProber: ConnectedLinkProber
     private lateinit var rttRanger: WifiRttRanger
+    private lateinit var gnssCollector: GnssLocationCollector
     private lateinit var cloudUploader: CloudBatchUploader
 
     private var latestScanResults = listOf<ScanResult>()
@@ -82,14 +84,36 @@ class BackgroundMappingService : Service() {
             useOciPut = true
         )
 
+        var uploaderReady = false
+        gnssCollector = GnssLocationCollector(applicationContext, poseRingBuffer) { snap, gnssEvent ->
+            _telemetryState.value = _telemetryState.value.copy(
+                latestLat = snap.lat,
+                latestLon = snap.lon,
+                latestGnssAccuracyM = snap.accuracyM,
+                latestGnssProvider = snap.provider
+            )
+            if (uploaderReady) {
+                val enrichedGnss = gnssEvent.copy(
+                    deviceId = deviceIdentityManager.getDeviceId(),
+                    environmentId = environmentDwellManager.currentEnvironmentId,
+                    dwellState = environmentDwellManager.currentDwellState.name
+                )
+                cloudUploader.enqueueHfEvent(enrichedGnss)
+                cloudUploader.enqueueLfEvent(enrichedGnss)
+            }
+        }
+
         cloudUploader = CloudBatchUploader(
             context = applicationContext,
             config = cloudConfig,
             deviceIdProvider = { deviceIdentityManager.getDeviceId() },
             environmentIdProvider = { environmentDwellManager.currentEnvironmentId },
-            dwellStateProvider = { environmentDwellManager.currentDwellState.name }
+            dwellStateProvider = { environmentDwellManager.currentDwellState.name },
+            locationProvider = { gnssCollector.getLatestSnapshot() }
         )
+        uploaderReady = true
         cloudUploader.start()
+        gnssCollector.start()
 
         // Handle adaptive duty-cycling on state changes (e.g. CAMPING vs IN_TRANSIT)
         environmentDwellManager.onDutyCycleChanged = { wifiScanMs, batchUploadMs ->
@@ -207,6 +231,7 @@ class BackgroundMappingService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        gnssCollector.stop()
         wifiScanner.stop()
         linkProber.stop()
         rttRanger.stop()

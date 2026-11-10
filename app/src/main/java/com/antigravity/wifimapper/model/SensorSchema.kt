@@ -36,6 +36,18 @@ sealed class TelemetryEvent {
 }
 
 @Serializable
+data class GnssSnapshot(
+    val lat: Double,
+    val lon: Double,
+    @SerialName("altitude_m") val altitudeM: Double? = null,
+    @SerialName("accuracy_m") val accuracyM: Float? = null,
+    val provider: String? = null,
+    @SerialName("bearing_deg") val bearingDeg: Float? = null,
+    @SerialName("speed_mps") val speedMps: Float? = null,
+    @SerialName("timestamp_ns") val timestampNs: Long = 0L
+)
+
+@Serializable
 @SerialName("batch_envelope")
 data class BatchEnvelope(
     @SerialName("event_type") override val eventType: String = "batch_envelope",
@@ -52,6 +64,11 @@ data class BatchEnvelope(
     @SerialName("battery_pct") val batteryPct: Int,
     @SerialName("battery_current_ua") val batteryCurrentUa: Long,
     @SerialName("step_count_delta") val stepCountDelta: Int,
+    val lat: Double? = null,
+    val lon: Double? = null,
+    @SerialName("gnss_altitude_m") val gnssAltitudeM: Double? = null,
+    @SerialName("gnss_accuracy_m") val gnssAccuracyM: Float? = null,
+    @SerialName("gnss_provider") val gnssProvider: String? = null,
     override val pose: Pose6DoF? = null
 ) : TelemetryEvent()
 
@@ -163,6 +180,24 @@ data class AcousticSonarEvent(
     override val pose: Pose6DoF? = null
 ) : TelemetryEvent()
 
+@Serializable
+@SerialName("gnss_location")
+data class GnssLocationEvent(
+    @SerialName("event_type") override val eventType: String = "gnss_location",
+    @SerialName("timestamp_ns") override val timestampNs: Long,
+    @SerialName("device_id") override val deviceId: String? = null,
+    @SerialName("environment_id") override val environmentId: String? = null,
+    @SerialName("dwell_state") override val dwellState: String? = null,
+    val lat: Double,
+    val lon: Double,
+    @SerialName("altitude_m") val altitudeM: Double? = null,
+    @SerialName("accuracy_m") val accuracyM: Float? = null,
+    val provider: String = "unknown",
+    @SerialName("bearing_deg") val bearingDeg: Float? = null,
+    @SerialName("speed_mps") val speedMps: Float? = null,
+    override val pose: Pose6DoF? = null
+) : TelemetryEvent()
+
 data class LiveMappingTelemetry(
     val isRunning: Boolean = false,
     val deviceId: String = "",
@@ -178,5 +213,9 @@ data class LiveMappingTelemetry(
     val batteryCurrentUa: Long = 0,
     val uploadedBatches: Long = 0,
     val totalUploadedBytesCompressed: Long = 0,
-    val pendingUploads: Int = 0
+    val pendingUploads: Int = 0,
+    val latestLat: Double? = null,
+    val latestLon: Double? = null,
+    val latestGnssAccuracyM: Float? = null,
+    val latestGnssProvider: String? = null
 )

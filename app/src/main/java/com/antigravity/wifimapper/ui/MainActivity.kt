@@ -197,6 +197,13 @@ fun MappingDashboardScreen(
                 Text("Walk Distance: %.2f m".format(telemetry.totalDistanceM))
                 Text("Visible Wi-Fi APs: ${telemetry.visibleApCount}")
                 Text("RTT Anchor Hits: ${telemetry.rttAnchorCount}")
+                val gnssText = if (telemetry.latestLat != null && telemetry.latestLon != null) {
+                    val accStr = telemetry.latestGnssAccuracyM?.let { " ±%.0fm".format(it) } ?: ""
+                    "Earth GNSS: %.5f, %.5f%s".format(telemetry.latestLat, telemetry.latestLon, accStr)
+                } else {
+                    "Earth GNSS: Acquiring fix..."
+                }
+                Text(gnssText)
                 Text("Cloud Batches: ${telemetry.uploadedBatches} (%.1f KB gz)".format(
                     telemetry.totalUploadedBytesCompressed / 1024.0
                 ))

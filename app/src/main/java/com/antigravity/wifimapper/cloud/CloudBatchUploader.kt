@@ -5,6 +5,8 @@ import android.os.BatteryManager
 import android.os.SystemClock
 import com.antigravity.wifimapper.model.BatchEnvelope
 import com.antigravity.wifimapper.model.ConnectedProbeEvent
+import com.antigravity.wifimapper.model.GnssLocationEvent
+import com.antigravity.wifimapper.model.GnssSnapshot
 import com.antigravity.wifimapper.model.MagBaroPdrEvent
 import com.antigravity.wifimapper.model.TelemetryEvent
 import com.antigravity.wifimapper.model.WifiRttEvent
@@ -75,7 +77,8 @@ class CloudBatchUploader(
     var config: CloudConfig = CloudConfig(),
     private val deviceIdProvider: () -> String = { android.os.Build.MODEL },
     private val environmentIdProvider: () -> String = { "env_default" },
-    private val dwellStateProvider: () -> String = { "IN_TRANSIT" }
+    private val dwellStateProvider: () -> String = { "IN_TRANSIT" },
+    private val locationProvider: () -> GnssSnapshot? = { null }
 ) {
     private val sessionId = UUID.randomUUID().toString()
 
@@ -286,6 +289,7 @@ class CloudBatchUploader(
 
         val batteryPct = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
         val batteryCurrentUa = batteryManager.getLongProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
+        val gnss = locationProvider()
 
         return BatchEnvelope(
             timestampNs = nowNs,
@@ -300,7 +304,12 @@ class CloudBatchUploader(
             eventCount = events.size,
             batteryPct = batteryPct,
             batteryCurrentUa = batteryCurrentUa,
-            stepCountDelta = events.count { it is MagBaroPdrEvent && it.stepDetected }
+            stepCountDelta = events.count { it is MagBaroPdrEvent && it.stepDetected },
+            lat = gnss?.lat,
+            lon = gnss?.lon,
+            gnssAltitudeM = gnss?.altitudeM,
+            gnssAccuracyM = gnss?.accuracyM,
+            gnssProvider = gnss?.provider
         )
     }
 
