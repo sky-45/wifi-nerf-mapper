@@ -24,7 +24,8 @@ class InertialPdrTracker(
 
     private val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
 
-    private val gameRotationSensor = sensorManager.getDefaultSensor(Sensor.TYPE_GAME_ROTATION_VECTOR)
+    private val rotationSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
+        ?: sensorManager.getDefaultSensor(Sensor.TYPE_GAME_ROTATION_VECTOR)
     private val stepDetectorSensor = sensorManager.getDefaultSensor(Sensor.TYPE_STEP_DETECTOR)
     private val linearAccelSensor = sensorManager.getDefaultSensor(Sensor.TYPE_LINEAR_ACCELERATION)
     private val magSensor = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD_UNCALIBRATED)
@@ -39,6 +40,8 @@ class InertialPdrTracker(
     private var quatY = 0.0
     private var quatZ = 0.0
     private var quatW = 1.0
+    private var forwardDirX = 0.0
+    private var forwardDirY = 1.0
     private var currentHeadingYawRad = 0.0
 
     // Weinberg Stride Model state
@@ -69,7 +72,7 @@ class InertialPdrTracker(
     var onStepDetectedListener: ((stepCount: Int, strideM: Double, pose: Pose6DoF) -> Unit)? = null
 
     fun start() {
-        gameRotationSensor?.let {
+        rotationSensor?.let {
             sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME)
         }
         stepDetectorSensor?.let {
@@ -94,7 +97,7 @@ class InertialPdrTracker(
         val timestampNs = event.timestamp
 
         when (event.sensor.type) {
-            Sensor.TYPE_GAME_ROTATION_VECTOR -> {
+            Sensor.TYPE_ROTATION_VECTOR, Sensor.TYPE_GAME_ROTATION_VECTOR -> {
                 val q = FloatArray(4)
                 SensorManager.getQuaternionFromVector(q, event.values)
                 quatW = q[0].toDouble()
@@ -102,19 +105,19 @@ class InertialPdrTracker(
                 quatY = q[2].toDouble()
                 quatZ = q[3].toDouble()
 
-                // Tilt-compensated gravity-projected forward azimuth:
-                // Projects the phone's forward axis (+Y, top of screen) onto Earth horizontal plane (East, North)
-                // avoiding Euler gimbal singularities when phone is held naturally at an angle.
-                val r01 = 2.0 * (quatX * quatY - quatW * quatZ)
-                val r11 = 1.0 - 2.0 * (quatX * quatX + quatZ * quatZ)
-                val horizNormSq = r01 * r01 + r11 * r11
-                if (horizNormSq > 0.04) {
-                    currentHeadingYawRad = kotlin.math.atan2(r01, r11)
-                } else {
-                    // Fallback to Euler yaw if phone is pointed nearly straight up/down
-                    val siny = 2.0 * (quatW * quatZ + quatX * quatY)
-                    val cosy = 1.0 - 2.0 * (quatY * quatY + quatZ * quatZ)
-                    currentHeadingYawRad = kotlin.math.atan2(siny, cosy)
+                // Direct horizontal forward vector projection via Android 3x3 rotation matrix
+                // Device forward axis is +Y (top of phone screen).
+                // In world frame: R transforms device -> world (X=East, Y=North, Z=Up).
+                // World forward = R * [0, 1, 0]^T = [R_01, R_11, R_21]^T.
+                val rMat = FloatArray(9)
+                SensorManager.getRotationMatrixFromVector(rMat, event.values)
+                val east = rMat[1].toDouble()
+                val north = rMat[4].toDouble()
+                val horizNorm = kotlin.math.hypot(east, north)
+                if (horizNorm > 0.05) {
+                    forwardDirX = east / horizNorm
+                    forwardDirY = north / horizNorm
+                    currentHeadingYawRad = kotlin.math.atan2(north, east)
                 }
 
                 pushPoseToBuffer(timestampNs)
@@ -191,9 +194,9 @@ class InertialPdrTracker(
         verticalBounceMax = 0.0
         verticalBounceMin = 0.0
 
-        // Advance 2D coordinates along current heading
-        posX += strideLengthM * cos(currentHeadingYawRad)
-        posY += strideLengthM * sin(currentHeadingYawRad)
+        // Advance 2D coordinates along true forward direction
+        posX += strideLengthM * forwardDirX
+        posY += strideLengthM * forwardDirY
 
         _totalSteps.value += 1
         _totalDistanceM.value += strideLengthM
